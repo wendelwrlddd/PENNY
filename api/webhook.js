@@ -1,6 +1,5 @@
 // Vercel Serverless Function - WhatsApp Webhook Handler
-import { extractFinancialData } from '../lib/gemini.js';
-import { db } from '../lib/firebase.js';
+// Dynamic imports to avoid errors when env vars are not set
 
 export default async function handler(req, res) {
   // --- PARTE A: O Teste de Segurança do Facebook ---
@@ -50,6 +49,10 @@ export default async function handler(req, res) {
       console.log('📱 Message from:', telefoneUsuario);
       console.log('💬 Text:', textoDoUsuario);
 
+      // Import dinâmico apenas quando necessário
+      const { extractFinancialData } = await import('../lib/gemini.js');
+      const { db } = await import('../lib/firebase.js');
+
       // 1. Chama o Gemini
       console.log('🤖 Sending to Gemini AI...');
       const dadosFinanceiros = await extractFinancialData(textoDoUsuario);
@@ -74,7 +77,7 @@ export default async function handler(req, res) {
 
     } catch (error) {
       console.error('❌ Error processing message:', error);
-      return res.status(500).json({ error: 'Erro no servidor' });
+      return res.status(500).json({ error: 'Erro no servidor', message: error.message });
     }
   }
 
