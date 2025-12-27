@@ -349,11 +349,11 @@ function App() {
               {/* Cards Section */}
               <div className="lg:col-span-2 space-y-8">
                 {/* Balance Card */}
-                <div className="relative overflow-hidden group">
-                   <div className="absolute inset-0 bg-gradient-to-br from-primary via-[#166534] to-black opacity-90 group-hover:scale-105 transition-transform duration-700"></div>
-                   <div className="relative p-8 rounded-3xl border border-white/20 min-h-[220px] flex flex-col justify-center">
-                      <p className="text-xs uppercase tracking-[0.2em] font-bold opacity-70 mb-2">Total spent to date</p>
-                      <h3 className="text-6xl font-black tracking-tight">{formatCurrency(totalExpenses)}</h3>
+                <div className="relative rounded-[32px] bg-gradient-to-br from-[#d946ef] via-[#fb7185] to-[#f97316] p-8 text-white overflow-hidden shadow-[0_20px_50px_rgba(236,72,153,0.3)] group transition-all hover:translate-y-[-2px]">
+                   <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-110 transition-transform duration-700"></div>
+                   <div className="relative z-10 flex flex-col justify-center min-h-[160px]">
+                      <p className="text-sm font-medium opacity-90 mb-1">Total spent to date.</p>
+                      <h3 className="text-6xl font-black tracking-tighter">{formatCurrency(totalExpenses)}</h3>
                    </div>
                 </div>
 
