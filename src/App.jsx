@@ -297,7 +297,9 @@ function App() {
       <div className="lg:hidden flex items-center justify-between px-6 py-4 border-b border-white/5">
         <h1 className="text-2xl font-bold tracking-tight text-primary">Penny</h1>
         <div className="flex items-center gap-4">
-           <img src="/profile.jpg" className="w-8 h-8 rounded-full border border-primary/20" alt="profile" />
+           <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary border border-primary/20">
+             WM
+           </div>
         </div>
       </div>
 
@@ -321,7 +323,9 @@ function App() {
           </div>
           <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
              <div className="flex items-center gap-3">
-                <img src="/profile.jpg" className="w-10 h-10 rounded-full border border-primary/30" alt="profile" />
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary border border-primary/30">
+                  WM
+                </div>
                 <div>
                   <p className="text-xs font-bold truncate max-w-[100px]">Wendel Monteiro</p>
                   <p className="text-[10px] text-gray-500">Free Account</p>
