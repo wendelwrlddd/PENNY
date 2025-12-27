@@ -270,8 +270,8 @@ function App() {
             ) : transactions.length === 0 ? (
               <p className="text-center text-gray-500 py-8">Nenhuma transação encontrada</p>
             ) : (
-              <div className="space-y-3">
-                {transactions.slice(0, 10).map((transaction) => (
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                {transactions.map((transaction) => (
                   <div key={transaction.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 px-2 rounded-lg transition-colors">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
