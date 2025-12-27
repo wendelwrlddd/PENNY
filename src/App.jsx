@@ -134,6 +134,47 @@ function App() {
   const MAX_CHART_THRESHOLD = 500;
   const chartHeights = dailyActivity;
 
+  // --- Diagnostics & Errors ---
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+    return (
+      <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-xl shadow-2xl max-w-md w-full border-t-4 border-red-500">
+          <h1 className="text-2xl font-bold text-red-600 mb-4 flex items-center gap-2">
+            ⚠️ Erro de Configuração
+          </h1>
+          <p className="text-gray-700 mb-6 font-medium">
+            O Painel não conseguiu carregar porque faltam variáveis de ambiente na Vercel.
+          </p>
+          <div className="space-y-3 bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+            {!firebaseConfig.apiKey && (
+              <p className="text-sm font-mono text-red-500 flex items-center gap-2">
+                ❌ VITE_FIREBASE_API_KEY
+              </p>
+            )}
+            {!firebaseConfig.projectId && (
+              <p className="text-sm font-mono text-red-500 flex items-center gap-2">
+                ❌ VITE_FIREBASE_PROJECT_ID
+              </p>
+            )}
+            {!firebaseConfig.appId && (
+              <p className="text-sm font-mono text-red-500 flex items-center gap-2">
+                ❌ VITE_FIREBASE_APP_ID
+              </p>
+            )}
+          </div>
+          <div className="p-4 bg-orange-50 rounded-lg border border-orange-200 mb-6 font-sans">
+            <h3 className="text-sm font-bold text-orange-800 mb-2">💡 Dica Importante:</h3>
+            <ul className="text-xs text-orange-700 space-y-2 list-disc pl-4">
+              <li>Verifique se escreveu <strong>API_KEY</strong> (com I) e não <strong>APT_KEY</strong>.</li>
+              <li>Certifique-se de que marcou a caixa <strong>Production</strong> nas configurações.</li>
+              <li>Após salvar na Vercel, você PRECISA fazer um <strong>Redeploy</strong>.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
