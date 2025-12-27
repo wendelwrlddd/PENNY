@@ -139,34 +139,13 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Left Column - Cards & Activity */}
           <div className="lg:col-span-2 space-y-6">
-            {/* My Cards */}
+            {/* My Cards - Simplified */}
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Meus cartões</h2>
-                <button className="text-sm text-gray-600 hover:text-gray-900">Ver Todos</button>
-              </div>
-              
-              {/* Card */}
               <div className="relative h-48 rounded-2xl bg-gradient-to-br from-purple-400 via-pink-400 to-orange-400 p-6 text-white overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32"></div>
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-8">
-                    <div>
-                      <p className="text-sm opacity-90 mb-1">Saldo Total</p>
-                      <p className="text-3xl font-bold">{formatCurrency(balance)}</p>
-                    </div>
-                    <div className="text-2xl font-bold">VISA</div>
-                  </div>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-sm opacity-90 mb-1">Número do Cartão</p>
-                      <p className="text-lg tracking-wider">**** **** **** 1234</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm opacity-90 mb-1">Validade</p>
-                      <p className="text-lg">12/25</p>
-                    </div>
-                  </div>
+                <div className="relative z-10 flex flex-col justify-center h-full">
+                  <p className="text-sm opacity-90 mb-1">Gastos até agora.</p>
+                  <p className="text-5xl font-bold">{formatCurrency(totalExpenses)}</p>
                 </div>
               </div>
             </div>
