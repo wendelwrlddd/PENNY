@@ -26,13 +26,111 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// --- Localization Dictionary ---
+const translations = {
+  en: {
+    heroTitle: "Let's manage your finances now, to make the future easier",
+    heroDesc: "Penny is your automated financial companion. Just text your expenses on WhatsApp, and we'll do the magic. No apps to download, no friction.",
+    getStarted: "Get Started",
+    introduction: "Introduction",
+    happyCustomers: "Happy Customers",
+    yearsExp: "Years of exp",
+    countries: "Countries",
+    featuresTitle: "We are a platform with the most complete features",
+    feature1Title: "Guaranteed safety",
+    feature1Desc: "All forms of transactions and information about your finances are 100% protected.",
+    feature2Title: "Saving global payments",
+    feature2Desc: "Penny is present in 20 countries, this makes us provide payment features globally.",
+    feature3Title: "Verified Platform",
+    feature3Desc: "Penny is a verified payment platform according to government regulations.",
+    manageFinancesTitle: "We help you to manage your finances neatly and clearly",
+    manageFinancesDesc: "All forms of your transactions will be summarized in statistics and expense details. For use in your detailed financial report.",
+    learnMore: "Learn more",
+    dashboard: "Dashboard",
+    welcome: "Welcome back",
+    totalSpent: "Total spent to date.",
+    activityStats: "Activity Statistics",
+    spendingGoal: "Spending Goal",
+    recentTransactions: "Recent Transactions",
+    seeAll: "See All",
+    noTransactions: "No transactions recorded yet.",
+    week: "Week",
+    month: "Month",
+    footerDesc: "The easiest way to track your money, right from your WhatsApp.",
+    days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    categories: {
+      Food: 'Food',
+      Transport: 'Transport',
+      Shopping: 'Shopping',
+      Leisure: 'Leisure',
+      General: 'General'
+    }
+  },
+  pt: {
+    heroTitle: "Gerencie suas finanças agora, para um futuro mais tranquilo",
+    heroDesc: "O Penny é seu companheiro financeiro automatizado. Basta enviar seus gastos pelo WhatsApp e nós cuidamos do resto. Sem apps para baixar, sem fricção.",
+    getStarted: "Começar Agora",
+    introduction: "Introdução",
+    happyCustomers: "Clientes Felizes",
+    yearsExp: "Anos de exp",
+    countries: "Países",
+    featuresTitle: "Somos a plataforma com as funcionalidades mais completas",
+    feature1Title: "Segurança Garantida",
+    feature1Desc: "Todas as formas de transações e informações sobre suas finanças estão 100% protegidas.",
+    feature2Title: "Pagamentos Globais",
+    feature2Desc: "O Penny está presente em 20 países, permitindo recursos de pagamento globais.",
+    feature3Title: "Plataforma Verificada",
+    feature3Desc: "O Penny é uma plataforma de pagamento verificada de acordo com as regulamentações governamentais.",
+    manageFinancesTitle: "Ajudamos você a gerenciar suas finanças de forma clara",
+    manageFinancesDesc: "Todas as suas transações serão resumidas em estatísticas e detalhes de gastos para seu relatório financeiro.",
+    learnMore: "Saiba mais",
+    dashboard: "Painel",
+    welcome: "Bem-vindo de volta",
+    totalSpent: "Total gasto até agora.",
+    activityStats: "Estatísticas de Atividade",
+    spendingGoal: "Meta de Gastos",
+    recentTransactions: "Transações Recentes",
+    seeAll: "Ver Tudo",
+    noTransactions: "Nenhuma transação registrada ainda.",
+    week: "Semana",
+    month: "Mês",
+    footerDesc: "A maneira mais fácil de organizar seu dinheiro, direto pelo seu WhatsApp.",
+    days: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
+    categories: {
+      Food: 'Alimentação',
+      Transport: 'Transporte',
+      Shopping: 'Compras',
+      Leisure: 'Lazer',
+      General: 'Geral'
+    }
+  }
+};
+
 function App() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isBrazil, setIsBrazil] = useState(false);
+  const [localeLoaded, setLocaleLoaded] = useState(false);
 
   // 1. Get User ID from URL
   const urlParams = new URLSearchParams(window.location.search);
   const userId = urlParams.get('user');
+
+  // Detect Country by IP
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(res => res.json())
+      .then(data => {
+        if (data.country_code === 'BR') {
+          console.log("🇧🇷 [Região] Brasil detectado via IP. Mudando para R$.");
+          setIsBrazil(true);
+        } else {
+          console.log(`🌍 [Região] País detectado: ${data.country_name}. Mantendo GBP.`);
+        }
+      })
+      .catch(err => console.error("Localization error:", err))
+      .finally(() => setLocaleLoaded(true));
+  }, []);
 
   useEffect(() => {
     if (!userId) {
@@ -40,15 +138,12 @@ function App() {
       return;
     }
 
-    // 2. Query only the specific user's transactions
-    console.log(`📊 [Dashboard] Carregando dados para o usuário: ${userId}`);
     const q = query(
       collection(db, 'usuarios', userId, 'transactions'), 
       orderBy('createdAt', 'desc')
     );
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log(`📊 [Firestore] Recebido snapshot com ${snapshot.size} documentos`);
       const transactionsData = [];
       snapshot.forEach((doc) => {
         transactionsData.push({ id: doc.id, ...doc.data() });
@@ -56,32 +151,29 @@ function App() {
       setTransactions(transactionsData);
       setLoading(false);
     }, (error) => {
-      console.error('❌ [Firestore] Erro ao buscar transações:', error);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [userId]);
 
-  const formatCurrency = (amount, currency = '£') => {
-    return `${currency}${parseFloat(amount || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`;
+  const t = isBrazil ? translations.pt : translations.en;
+
+  const formatCurrency = (amount) => {
+    const symbol = isBrazil ? 'R$' : '£';
+    const loc = isBrazil ? 'pt-BR' : 'en-GB';
+    return `${symbol}${parseFloat(amount || 0).toLocaleString(loc, { minimumFractionDigits: 2 })}`;
   };
 
   const parseSafeDate = (dateValue) => {
     if (!dateValue || dateValue === 'N/A') return null;
-    
-    // Handle Firestore Timestamp
     if (dateValue && typeof dateValue === 'object' && dateValue.seconds !== undefined) {
       return new Date(dateValue.seconds * 1000);
     }
-    
-    // Handle European/Brazilian DD/MM/YYYY
     if (typeof dateValue === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(dateValue)) {
       const [day, month, year] = dateValue.split('/');
       return new Date(year, month - 1, day);
     }
-
-    // Handle JS Date or ISO String
     const date = new Date(dateValue);
     return isNaN(date.getTime()) ? null : date;
   };
@@ -89,10 +181,9 @@ function App() {
   const formatDate = (dateValue, fallbackValue) => {
     let date = parseSafeDate(dateValue);
     if (!date && fallbackValue) date = parseSafeDate(fallbackValue);
+    if (!date) return '---';
     
-    if (!date) return 'Date N/A';
-    
-    return date.toLocaleDateString('en-GB', {
+    return date.toLocaleDateString(isBrazil ? 'pt-BR' : 'en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
@@ -126,14 +217,14 @@ function App() {
 
   // Categorias principais para exibir no dashboard (mesmo que vazias)
   const mainCategories = [
-    { name: 'Food', color: 'bg-orange-500' },
-    { name: 'Transport', color: 'bg-blue-500' },
-    { name: 'Shopping', color: 'bg-pink-500' },
-    { name: 'Leisure', color: 'bg-purple-500' }
+    { name: t.categories.Food, color: 'bg-orange-500' },
+    { name: t.categories.Transport, color: 'bg-blue-500' },
+    { name: t.categories.Shopping, color: 'bg-pink-500' },
+    { name: t.categories.Leisure, color: 'bg-purple-500' }
   ];
 
   // 4. Atividade Semanal (Volume de transações por dia)
-  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const daysOfWeek = t.days;
   const dailyActivity = daysOfWeek.map((day, index) => {
     // Sum transaction amounts per day (only for expenses/untyped)
     const totalAmount = transactions
@@ -164,12 +255,12 @@ function App() {
             <span className="text-xl font-bold tracking-tighter">Penny</span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-            <a href="#features" className="hover:text-white transition-colors">Features</a>
-            <a href="#preview" className="hover:text-white transition-colors">Preview</a>
-            <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
+            <a href="#features" className="hover:text-white transition-colors">{isBrazil ? "Funcionalidades" : "Features"}</a>
+            <a href="#preview" className="hover:text-white transition-colors">{isBrazil ? "Prévia" : "Preview"}</a>
+            <a href="#how-it-works" className="hover:text-white transition-colors">{isBrazil ? "Como funciona" : "How it works"}</a>
           </div>
           <button className="px-5 py-2 bg-primary text-black text-sm font-bold rounded-full hover:scale-105 transition-transform">
-            Get Started
+            {t.getStarted}
           </button>
         </div>
       </nav>
@@ -180,28 +271,28 @@ function App() {
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16">
           <div className="flex-1 text-center lg:text-left">
             <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6">
-              Let's manage your <span className="text-primary italic">finances</span> now, to make the future easier
+              {t.heroTitle.split('finances')[0]}<span className="text-primary italic">{isBrazil ? "finanças" : "finances"}</span>{t.heroTitle.split('finances')[1]}
             </h1>
             <p className="text-xl text-gray-400 max-w-xl mx-auto lg:mx-0 mb-10 leading-relaxed">
-              Penny is your automated financial companion. Just text your expenses on WhatsApp, and we'll do the magic. No apps to download, no friction.
+              {t.heroDesc}
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
               <button className="w-full sm:w-auto px-8 py-4 bg-primary text-black font-bold rounded-full hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all">
-                Get Started
+                {t.getStarted}
               </button>
               <button className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
                 <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
                   <svg className="w-3 h-3 fill-white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                 </div>
-                Introduction
+                {t.introduction}
               </button>
             </div>
             <div className="mt-12 flex items-center justify-center lg:justify-start gap-8">
-              <div><p className="text-2xl font-bold">25k+</p><p className="text-xs text-gray-500 uppercase tracking-widest">Happy Customers</p></div>
+              <div><p className="text-2xl font-bold">25k+</p><p className="text-xs text-gray-500 uppercase tracking-widest">{t.happyCustomers}</p></div>
               <div className="w-px h-8 bg-white/10"></div>
-              <div><p className="text-2xl font-bold">11+</p><p className="text-xs text-gray-500 uppercase tracking-widest">Years of exp</p></div>
+              <div><p className="text-2xl font-bold">11+</p><p className="text-xs text-gray-500 uppercase tracking-widest">{t.yearsExp}</p></div>
               <div className="w-px h-8 bg-white/10"></div>
-              <div><p className="text-2xl font-bold">20</p><p className="text-xs text-gray-500 uppercase tracking-widest">Countries</p></div>
+              <div><p className="text-2xl font-bold">20</p><p className="text-xs text-gray-500 uppercase tracking-widest">{t.countries}</p></div>
             </div>
           </div>
           <div className="flex-1 relative">
@@ -230,13 +321,13 @@ function App() {
       <section id="features" className="py-32 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-20">
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6">We are a platform with the <br/> most complete features</h2>
+            <h2 className="text-4xl lg:text-5xl font-bold mb-6">{t.featuresTitle.split('<br/>')[0]} <br/> {t.featuresTitle.split('<br/>')[1]}</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { title: 'Guaranteed safety', desc: 'All forms of transactions and information about your finances are 100% protected.', icon: '🛡️' },
-              { title: 'Saving global payments', desc: 'Penny is present in 20 countries, this makes us provide payment features globally.', icon: '🌐' },
-              { title: 'Verified Platform', desc: 'Penny is a verified payment platform according to government regulations.', icon: '✅' }
+              { title: t.feature1Title, desc: t.feature1Desc, icon: '🛡️' },
+              { title: t.feature2Title, desc: t.feature2Desc, icon: '🌐' },
+              { title: t.feature3Title, desc: t.feature3Desc, icon: '✅' }
             ].map((f, i) => (
               <div key={i} className="p-8 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 transition-colors group">
                 <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-2xl mb-6 group-hover:scale-110 transition-transform">
@@ -258,9 +349,9 @@ function App() {
                 <img src="/assets/dashboard_preview_1.png" alt="Dashboard Chart" className="rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10" />
              </div>
              <div className="flex-1 space-y-8">
-                <h2 className="text-4xl font-bold leading-tight">We help you to manage your finances neatly and clearly</h2>
-                <p className="text-gray-400 leading-relaxed">All forms of your transactions will be summarized in statistics and expense details. For use in your detailed financial report.</p>
-                <button className="px-8 py-4 bg-primary text-black font-bold rounded-full hover:scale-105 transition-transform">Learn more</button>
+                <h2 className="text-4xl font-bold leading-tight">{t.manageFinancesTitle}</h2>
+                <p className="text-gray-400 leading-relaxed">{t.manageFinancesDesc}</p>
+                <button className="px-8 py-4 bg-primary text-black font-bold rounded-full hover:scale-105 transition-transform">{t.learnMore}</button>
              </div>
           </div>
         </div>
@@ -276,12 +367,12 @@ function App() {
                 </div>
                 <span className="text-xl font-bold tracking-tighter uppercase">Penny</span>
              </div>
-             <p className="text-sm text-gray-500 leading-relaxed">The easiest way to track your money, right from your WhatsApp.</p>
+             <p className="text-sm text-gray-500 leading-relaxed">{t.footerDesc}</p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-12">
-             <div><h4 className="font-bold mb-6">Product</h4><ul className="text-sm text-gray-500 space-y-4"><li>Dashboard</li><li>Features</li><li>Pricing</li></ul></div>
-             <div><h4 className="font-bold mb-6">Company</h4><ul className="text-sm text-gray-500 space-y-4"><li>About Us</li><li>Careers</li><li>Contact</li></ul></div>
-             <div><h4 className="font-bold mb-6">Legal</h4><ul className="text-sm text-gray-500 space-y-4"><li>Privacy</li><li>Terms</li></ul></div>
+             <div><h4 className="font-bold mb-6">{isBrazil ? "Produto" : "Product"}</h4><ul className="text-sm text-gray-500 space-y-4"><li>Dashboard</li><li>{isBrazil ? "Funcionalidades" : "Features"}</li><li>{isBrazil ? "Preços" : "Pricing"}</li></ul></div>
+             <div><h4 className="font-bold mb-6">{isBrazil ? "Empresa" : "Company"}</h4><ul className="text-sm text-gray-500 space-y-4"><li>{isBrazil ? "Sobre Nós" : "About Us"}</li><li>{isBrazil ? "Carreiras" : "Careers"}</li><li>{isBrazil ? "Contato" : "Contact"}</li></ul></div>
+             <div><h4 className="font-bold mb-6">{isBrazil ? "Legal" : "Legal"}</h4><ul className="text-sm text-gray-500 space-y-4"><li>{isBrazil ? "Privacidade" : "Privacy"}</li><li>{isBrazil ? "Termos" : "Terms"}</li></ul></div>
           </div>
         </div>
         <div className="text-center mt-20 pt-8 border-t border-white/5 text-xs text-gray-600">
@@ -314,9 +405,14 @@ function App() {
               <span className="text-2xl font-bold">Penny</span>
             </div>
             <nav className="space-y-2">
-              {['Home', 'Dashboard', 'Wallets', 'Transactions'].map((item) => (
-                <a key={item} href="#" className={`flex items-center px-4 py-3 rounded-xl transition-all ${item === 'Dashboard' ? 'bg-primary/10 text-primary font-bold' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
-                  {item}
+              {[
+                { name: isBrazil ? "Início" : "Home", id: "Home" },
+                { name: isBrazil ? "Painel" : "Dashboard", id: "Dashboard" },
+                { name: isBrazil ? "Carteiras" : "Wallets", id: "Wallets" },
+                { name: isBrazil ? "Transações" : "Transactions", id: "Transactions" }
+              ].map((item) => (
+                <a key={item.id} href="#" className={`flex items-center px-4 py-3 rounded-xl transition-all ${item.id === 'Dashboard' ? 'bg-primary/10 text-primary font-bold' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                  {item.name}
                 </a>
               ))}
             </nav>
@@ -328,7 +424,7 @@ function App() {
                 </div>
                 <div>
                   <p className="text-xs font-bold truncate max-w-[100px]">Wendel Monteiro</p>
-                  <p className="text-[10px] text-gray-500">Free Account</p>
+                  <p className="text-[10px] text-gray-500">{isBrazil ? "Conta Gratuita" : "Free Account"}</p>
                 </div>
              </div>
           </div>
@@ -340,8 +436,8 @@ function App() {
             {/* Header Desktop */}
             <div className="hidden lg:flex items-center justify-between">
                <div>
-                  <h2 className="text-3xl font-bold">Dashboard</h2>
-                  <p className="text-gray-500 text-sm">Welcome back, Wendel</p>
+                  <h2 className="text-3xl font-bold">{t.dashboard}</h2>
+                  <p className="text-gray-500 text-sm">{t.welcome}, Wendel</p>
                </div>
                <div className="flex items-center gap-4">
                   <div className="p-3 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">🔔</div>
@@ -356,7 +452,7 @@ function App() {
                 <div className="relative rounded-[32px] bg-gradient-to-br from-[#d946ef] via-[#fb7185] to-[#f97316] p-8 text-white overflow-hidden shadow-[0_20px_50px_rgba(236,72,153,0.3)] group transition-all hover:translate-y-[-2px]">
                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-110 transition-transform duration-700"></div>
                    <div className="relative z-10 flex flex-col justify-center min-h-[160px]">
-                      <p className="text-sm font-medium opacity-90 mb-1">Total spent to date.</p>
+                      <p className="text-sm font-medium opacity-90 mb-1">{t.totalSpent}</p>
                       <h3 className="text-6xl font-black tracking-tighter">{formatCurrency(totalExpenses)}</h3>
                    </div>
                 </div>
@@ -364,10 +460,10 @@ function App() {
                 {/* Activity Chart */}
                 <div className="p-6 bg-white/5 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-md">
                    <div className="flex items-center justify-between mb-8">
-                      <h3 className="font-bold text-lg">Activity Statistics</h3>
+                      <h3 className="font-bold text-lg">{t.activityStats}</h3>
                       <select className="bg-black border border-white/10 text-xs rounded-lg px-3 py-1 text-gray-400">
-                        <option>Week</option>
-                        <option>Month</option>
+                        <option>{t.week}</option>
+                        <option>{t.month}</option>
                       </select>
                    </div>
                    <div className="h-48 flex items-end justify-between gap-4">
@@ -398,7 +494,7 @@ function App() {
               <div className="space-y-8">
                 {/* Circular Spending */}
                 <div className="p-8 bg-white/5 border border-white/10 rounded-3xl flex flex-col items-center text-center">
-                   <h3 className="font-bold mb-8">Spending Goal</h3>
+                   <h3 className="font-bold mb-8">{t.spendingGoal}</h3>
                    <div className="relative w-40 h-40 mb-8">
                       <svg className="w-full h-full -rotate-90">
                         <circle cx="80" cy="80" r="70" fill="none" stroke="#222" strokeWidth="12" />
@@ -406,7 +502,7 @@ function App() {
                       </svg>
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
                         <span className="text-3xl font-black">{spendingPercentage}%</span>
-                        <span className="text-[10px] text-gray-500 uppercase">of month</span>
+                        <span className="text-[10px] text-gray-500 uppercase">{isBrazil ? "do mês" : "of month"}</span>
                       </div>
                    </div>
                    <div className="w-full space-y-4">
@@ -426,14 +522,14 @@ function App() {
               {/* Transações Full Width Bottom */}
               <div className="lg:col-span-3 p-8 bg-white/5 border border-white/10 rounded-[32px] shadow-2xl">
                  <div className="flex items-center justify-between mb-8">
-                    <h3 className="text-xl font-bold tracking-tight">Recent Transactions</h3>
-                    <button className="text-xs text-primary font-bold hover:underline">See All</button>
+                    <h3 className="text-xl font-bold tracking-tight">{t.recentTransactions}</h3>
+                    <button className="text-xs text-primary font-bold hover:underline">{t.seeAll}</button>
                  </div>
                  
                  {loading ? (
                     <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div></div>
                  ) : transactions.length === 0 ? (
-                    <p className="text-center text-gray-600 py-12 italic">No transactions recorded yet.</p>
+                    <p className="text-center text-gray-600 py-12 italic">{t.noTransactions}</p>
                  ) : (
                     <div className="space-y-4">
                        {transactions.map((t) => (
@@ -443,8 +539,8 @@ function App() {
                                   {t.type === 'income' ? '↑' : '↓'}
                                </div>
                                <div>
-                                  <p className="text-sm font-bold">{t.description || 'Transaction'}</p>
-                                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(t.date, t.createdAt)} • {t.category || 'General'}</p>
+                                  <p className="text-sm font-bold">{t.description || (isBrazil ? "Transação" : "Transaction")}</p>
+                                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(t.date, t.createdAt)} • {t.category || (isBrazil ? "Geral" : "General")}</p>
                                </div>
                             </div>
                             <div className="text-right">
