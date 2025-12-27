@@ -47,7 +47,7 @@ https://vercel.com/wendel-monteiros-projects/penny/settings/environment-variable
 
 #### 1️⃣ VITE_FIREBASE_API_KEY
 - **Key:** `VITE_FIREBASE_API_KEY`
-- **Value:** `AIzaSyAG_q7Dsgrl9uX-EFtUYQI5rty0ncB8vZE`
+- **Value:** `[SUA_CHAVE_AQUI]`
 - **Environment:** ✅ Production ✅ Preview ✅ Development
 - Clique em **Save**
 
@@ -65,7 +65,7 @@ https://vercel.com/wendel-monteiros-projects/penny/settings/environment-variable
 
 #### 4️⃣ GEMINI_API_KEY
 - **Key:** `GEMINI_API_KEY`
-- **Value:** `AIzaSyDTXSZZL-7nfTMMIZ15rOFbwaoKhmrDEqs`
+- **Value:** `[SUA_CHAVE_AQUI]`
 - **Environment:** ✅ Production ✅ Preview ✅ Development
 - Clique em **Save**
 

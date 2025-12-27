@@ -6,7 +6,7 @@ dotenv.config();
 const apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey) {
-  console.error('❌ GEMINI_API_KEY not found in environment');
+  console.error('❌ GEMINI_API_KEY not found');
   process.exit(1);
 }
 
@@ -15,8 +15,8 @@ console.log('🔑 API Key found:', apiKey.substring(0, 5) + '...');
 async function testGemini() {
   const genAI = new GoogleGenerativeAI(apiKey);
   
-  // Trying the exact string used in production
-  const modelName = 'gemini-1.5-flash';
+  // Try the flash-latest which is highly stable
+  const modelName = 'gemini-flash-latest';
   
   console.log(`🤖 Testing model: ${modelName}`);
   const model = genAI.getGenerativeModel({ model: modelName });

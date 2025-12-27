@@ -9,7 +9,7 @@
 # FRONTEND (Vite) - Variáveis públicas
 # ========================================
 
-VITE_FIREBASE_API_KEY=AIzaSyAG_q7Dsgrl9uX-EFtUYQI5rty0ncB8vZE
+VITE_FIREBASE_API_KEY=[SUA_CHAVE_AQUI]
 VITE_FIREBASE_PROJECT_ID=Penny-Wendell
 VITE_FIREBASE_APP_ID=1:YOUR_APP_ID_HERE
 
@@ -17,7 +17,7 @@ VITE_FIREBASE_APP_ID=1:YOUR_APP_ID_HERE
 # BACKEND (Vercel Functions) - Variáveis privadas
 # ========================================
 
-GEMINI_API_KEY=AIzaSyDTXSZZL-7nfTMMIZ15rOFbwaoKhmrDEqs
+GEMINI_API_KEY=[SUA_CHAVE_AQUI]
 FIREBASE_PROJECT_ID=Penny-Wendell
 
 # ========================================

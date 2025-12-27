@@ -41,9 +41,23 @@ function App() {
     return `${currency} ${parseFloat(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Data N/A';
-    const date = new Date(dateString);
+  const parseSafeDate = (dateValue) => {
+    if (!dateValue || dateValue === 'N/A') return null;
+    
+    // Handle Firestore Timestamp
+    if (dateValue && typeof dateValue === 'object' && dateValue.seconds !== undefined) {
+      return new Date(dateValue.seconds * 1000);
+    }
+    
+    // Handle JS Date or String
+    const date = new Date(dateValue);
+    return isNaN(date.getTime()) ? null : date;
+  };
+
+  const formatDate = (dateValue) => {
+    const date = parseSafeDate(dateValue);
+    if (!date) return 'Data N/A';
+    
     return date.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: 'short',
@@ -87,19 +101,20 @@ function App() {
   // 4. Atividade Semanal (Volume de transações por dia)
   const daysOfWeek = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const dailyActivity = daysOfWeek.map((day, index) => {
-    // Conta a quantidade de transações em cada dia
-    const countTransactions = transactions.filter((t) => {
-      // Prioriza createdAt se date for inválido ou "N/A"
-      const dateStr = t.date && t.date !== 'N/A' ? t.date : t.createdAt;
-      if (!dateStr) return false;
-      const date = new Date(dateStr);
-      return !isNaN(date.getTime()) && date.getDay() === index;
-    }).length;
-    return countTransactions;
+    // Sum transaction amounts per day (only for expenses/untyped)
+    const totalAmount = transactions
+      .filter((t) => {
+        const date = parseSafeDate(t.date) || parseSafeDate(t.createdAt);
+        return date && date.getDay() === index && (t.type === 'expense' || !t.type);
+      })
+      .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+    
+    return totalAmount;
   });
 
-  const maxDaily = Math.max(...dailyActivity, 1);
-  const chartHeights = dailyActivity.map(val => (val / maxDaily) * 100);
+  // Chart heights: R$ 500 = 100% (full bar)
+  const MAX_CHART_THRESHOLD = 500;
+  const chartHeights = dailyActivity;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -164,20 +179,29 @@ function App() {
               
               {/* Simple Activity Visualization */}
               <div className="h-48 flex items-end justify-between gap-3">
-                {chartHeights.map((height, i) => (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                    <div 
-                      className="w-full bg-red-500 rounded-md transition-all hover:bg-red-600 shadow-sm"
-                      style={{ 
-                        height: `${Math.max(height, height > 0 ? 10 : 0)}%`,
-                        minHeight: height > 0 ? '12px' : '0'
-                      }}
-                    ></div>
-                    <span className="text-xs text-gray-400 font-medium">
-                      {daysOfWeek[i]}
-                    </span>
-                  </div>
-                ))}
+                {chartHeights.map((amount, i) => {
+                  const percentage = Math.min((amount / MAX_CHART_THRESHOLD) * 100, 100);
+                  return (
+                    <div key={i} className="flex-1 h-full flex flex-col justify-end items-center gap-2">
+                      <div 
+                        className="w-full bg-red-500 rounded-md transition-all hover:bg-red-600 shadow-sm relative group"
+                        style={{ 
+                          height: `${Math.max(percentage, amount > 0 ? 5 : 0)}%`,
+                          minHeight: amount > 0 ? '8px' : '2px'
+                        }}
+                      >
+                        {amount > 0 && (
+                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 shadow-lg">
+                            {formatCurrency(amount)}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 font-medium shrink-0">
+                        {daysOfWeek[i]}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -223,10 +247,6 @@ function App() {
                       <p className="text-3xl font-bold text-gray-900">{spendingPercentage}%</p>
                     </div>
                   </div>
-                </div>
-                <div className="mt-4 text-center">
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(balance)}</p>
-                  <p className="text-sm text-gray-500">Saldo Disponível</p>
                 </div>
               </div>
 
@@ -290,7 +310,7 @@ function App() {
                           {transaction.description || 'Transação'}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatDate(transaction.date || transaction.createdAt)} • {transaction.category || 'Geral'}
+                          {formatDate(transaction.date !== 'N/A' ? transaction.date : transaction.createdAt)} • {transaction.category || 'Geral'}
                         </p>
                       </div>
                     </div>

@@ -32,11 +32,13 @@ https://vercel.com/wendel-monteiros-projects/penny
 **Token de Verificação WhatsApp:** `penny123`
 
 **Firebase:**
+**Firebase:**
 - Project ID: `Penny-Wendell`
-- API Key: `AIzaSyAG_q7Dsgrl9uX-EFtUYQI5rty0ncB8vZE`
+- API Key: `[VITE_FIREBASE_API_KEY]`
 
-**Gemini AI:**
-- API Key: `AIzaSyDTXSZZL-7nfTMMIZ15rOFbwaoKhmrDEqs`
+**Gemini AI (Estável):**
+- API Key: `[GEMINI_API_KEY]`
+- Modelos Recomendados: `gemini-2.0-flash`, `gemini-flash-latest`
 
 ---
 
@@ -59,10 +61,10 @@ Acesse: https://vercel.com/wendel-monteiros-projects/penny/settings/environment-
 
 Adicione:
 ```
-VITE_FIREBASE_API_KEY=AIzaSyAG_q7Dsgrl9uX-EFtUYQI5rty0ncB8vZE
+VITE_FIREBASE_API_KEY=[SUA_CHAVE_AQUI]
 VITE_FIREBASE_PROJECT_ID=Penny-Wendell
 VITE_FIREBASE_APP_ID=[pegar do Firebase Console]
-GEMINI_API_KEY=AIzaSyDTXSZZL-7nfTMMIZ15rOFbwaoKhmrDEqs
+GEMINI_API_KEY=[SUA_CHAVE_AQUI]
 FIREBASE_PROJECT_ID=Penny-Wendell
 FIREBASE_SERVICE_ACCOUNT=[JSON completo do arquivo baixado]
 ```

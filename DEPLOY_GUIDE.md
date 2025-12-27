@@ -51,7 +51,7 @@ Adicione as seguintes variáveis (uma por vez):
 #### Frontend (Vite)
 ```
 Nome: VITE_FIREBASE_API_KEY
-Valor: AIzaSyAG_q7Dsgrl9uX-EFtUYQI5rty0ncB8vZE
+Valor: [SUA_CHAVE_AQUI]
 Environment: Production, Preview, Development
 ```
 
@@ -70,7 +70,7 @@ Environment: Production, Preview, Development
 #### Backend (Vercel Functions)
 ```
 Nome: GEMINI_API_KEY
-Valor: AIzaSyDTXSZZL-7nfTMMIZ15rOFbwaoKhmrDEqs
+Valor: [SUA_CHAVE_AQUI]
 Environment: Production, Preview, Development
 ```
 

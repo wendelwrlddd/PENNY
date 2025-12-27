@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 
 const serviceAccountPath = 'c:\\Users\\monte\\Downloads\\penny-wendell-firebase-adminsdk-fbsvc-36573af991.json';
-const geminiKey = 'AIzaSyDX5LNxo8d1kLeQFIeviCCt1lX8IVSu4s8';
+const geminiKey = process.env.GEMINI_API_KEY;
 const projectId = 'penny-wendell';
 
 try {

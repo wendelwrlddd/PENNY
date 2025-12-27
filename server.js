@@ -108,10 +108,45 @@ async function processMessageBackground(text, sender, instance, source) {
     // 4. Send Confirmation on WhatsApp (Evolution API)
     if (source === 'whatsapp-evolution') {
       try {
-        const amountFormatted = `${transactionData.currency} ${transactionData.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-        const replyText = `✅ *${amountFormatted}* gastos com *${transactionData.category || 'Geral'}*.\n\nSeu dashboard foi atualizado! 🚀\n🔗 https://penny-finances.vercel.app/`;
+        // --- Calculate Totals (Today and Month) ---
+        // We use Brazil Time (UTC-3) for accurate daily/monthly tracking
+        const now = new Date();
+        const tz = 'America/Sao_Paulo';
+        const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+        const monthStr = todayStr.substring(0, 7); // YYYY-MM
+
+        const totalsSnapshot = await db.collection('transactions')
+          .where('userPhone', '==', sender)
+          .get();
+
+        let totalDia = 0;
+        let totalMes = 0;
+
+        totalsSnapshot.forEach(doc => {
+          const data = doc.data();
+          // Logic: Sum everything that IS NOT income
+          if (data.type === 'income') return;
+
+          const created = new Date(data.createdAt || data.date);
+          const createdTodayStr = created.toLocaleDateString('en-CA', { timeZone: tz });
+          const createdMonthStr = createdTodayStr.substring(0, 7);
+
+          if (createdTodayStr === todayStr) totalDia += parseFloat(data.amount || 0);
+          if (createdMonthStr === monthStr) totalMes += parseFloat(data.amount || 0);
+        });
+
+        const formatBRL = (val) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        const dashboardUrl = 'https://penny-finances.vercel.app'; // Corrected URL
+
+        const replyText = `💸 *Opa! Já registrei esse gasto* 😉\n\n` +
+          `🍽️ *${transactionData.category || 'Geral'}*: R$ ${formatBRL(transactionData.amount)}\n\n` +
+          `📊 *Como você está agora:*\n` +
+          `• Gastos hoje: R$ ${formatBRL(totalDia)}\n` +
+          `• Gastos no mês: R$ ${formatBRL(totalMes)}\n\n` +
+          `📱 Quando quiser ver tudo detalhado, é só abrir seu dashboard 💙\n` +
+          `🔗 ${dashboardUrl}`;
         
-        console.log(`[Background] 📤 Sending reply to ${sender}...`);
+        console.log(`[Background] 📤 Sending custom reply to ${sender}...`);
         await sendMessage(instance, sender, replyText);
       } catch (replyError) {
         console.error('[Background] ⚠️ Failed to send WhatsApp reply:', replyError.message);

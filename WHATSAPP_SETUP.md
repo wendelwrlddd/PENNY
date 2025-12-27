@@ -79,7 +79,7 @@ Isso vai:
 No dashboard da Vercel:
 1. Vá em **Settings** → **Environment Variables**
 2. Adicione:
-   - `GEMINI_API_KEY` = `AIzaSyDTXSZZL-7nfTMMIZ15rOFbwaoKhmrDEqs`
+   - `GEMINI_API_KEY` = `[SUA_CHAVE_AQUI]`
    - `FIREBASE_PROJECT_ID` = `Penny-Wendell`
    - `FIREBASE_SERVICE_ACCOUNT` = (cole o JSON completo do arquivo que você baixou)
 
