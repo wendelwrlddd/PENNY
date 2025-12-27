@@ -71,7 +71,22 @@ async function processMessageBackground(text, sender, instance, source) {
 
     // 1. Extract Data with Gemini
     console.log('[Background] 🤖 Calling Gemini AI...');
-    const transactionData = await extractFinancialData(text);
+    let transactionData;
+    try {
+      transactionData = await extractFinancialData(text);
+    } catch (aiError) {
+      console.error('[Background] ⚠️ Gemini failed, using fallback:', aiError.message);
+      // Fallback data so we don't lose the message trace in the DB
+      transactionData = {
+        amount: 0,
+        currency: "R$",
+        category: "Erro IA",
+        description: `(Auto-Processado) ${text.substring(0, 50)}...`,
+        date: new Date().toISOString(),
+        type: "expense",
+        error: aiError.message
+      };
+    }
     
     // 2. Save to Firebase
     const docData = {
