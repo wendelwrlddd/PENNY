@@ -4,6 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { extractFinancialData } from './lib/gemini.js';
 import { db } from './lib/firebase.js';
+import { sendMessage } from './lib/evolution.js';
 
 dotenv.config();
 
@@ -88,6 +89,15 @@ async function processMessageBackground(text, sender, instance, source) {
     
     // 3. Log Raw Message (Professional Storage)
     await logRawMessage(instance, sender, text);
+
+    // 4. Send Confirmation on WhatsApp (Evolution API)
+    if (source === 'whatsapp-evolution') {
+      const amountFormatted = `${transactionData.currency} ${transactionData.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+      const replyText = `✅ *${amountFormatted}* gastos com *${transactionData.category || 'Geral'}*.\n\nSeu dashboard foi atualizado! 🚀\n🔗 https://penny-finances.vercel.app/`;
+      
+      console.log(`[Background] 📤 Sending reply to ${sender}...`);
+      await sendMessage(instance, sender, replyText);
+    }
 
   } catch (error) {
     console.error('[Background] ❌ Error processing message:', error);
