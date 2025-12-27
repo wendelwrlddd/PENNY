@@ -163,14 +163,17 @@ function App() {
               </div>
               
               {/* Simple Activity Visualization */}
-              <div className="h-48 flex items-end justify-between gap-2">
+              <div className="h-48 flex items-end justify-between gap-3">
                 {chartHeights.map((height, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-2">
                     <div 
-                      className="w-full bg-gradient-to-t from-purple-400 to-purple-200 rounded-lg transition-all hover:opacity-80"
-                      style={{ height: `${Math.max(height, 5)}%` }}
+                      className="w-full bg-red-500 rounded-md transition-all hover:bg-red-600 shadow-sm"
+                      style={{ 
+                        height: `${Math.max(height, height > 0 ? 10 : 0)}%`,
+                        minHeight: height > 0 ? '12px' : '0'
+                      }}
                     ></div>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-400 font-medium">
                       {daysOfWeek[i]}
                     </span>
                   </div>
