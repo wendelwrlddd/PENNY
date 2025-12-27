@@ -69,18 +69,20 @@ async function processMessageBackground(text, sender, instance, source) {
   try {
     console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
 
-    // 1. Extract Data with Gemini
-    console.log('[Background] 🤖 Calling Gemini AI...');
+    // 1. Detect Region and Extract Data with Gemini
+    const isBrazil = sender.startsWith('55');
+    console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
+    
     let transactionData;
     try {
-      transactionData = await extractFinancialData(text);
+      transactionData = await extractFinancialData(text, isBrazil);
     } catch (aiError) {
       console.error('[Background] ⚠️ Gemini failed, using fallback:', aiError.message);
-      // Fallback data so we don't lose the message trace in the DB
+      // Fallback data
       transactionData = {
         amount: 0,
-        currency: "R$",
-        category: "Erro IA",
+        currency: isBrazil ? "R$" : "£",
+        category: isBrazil ? "Erro IA" : "AI Error",
         description: `(Auto-Processado) ${text.substring(0, 50)}...`,
         date: new Date().toISOString(),
         type: "expense",
@@ -109,9 +111,12 @@ async function processMessageBackground(text, sender, instance, source) {
     // 4. Send Confirmation on WhatsApp (Evolution API)
     if (source === 'whatsapp-evolution') {
       try {
-        // --- Calculate Totals (Today and Month) ---
+        // --- Localized Formatting ---
+        const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
+        const currencySymbol = isBrazil ? 'R$' : '£';
+        const locale = isBrazil ? 'pt-BR' : 'en-GB';
+        
         const now = new Date();
-        const tz = 'Europe/London';
         const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
         const monthStr = todayStr.substring(0, 7);
 
@@ -133,17 +138,28 @@ async function processMessageBackground(text, sender, instance, source) {
           if (createdMonthStr === monthStr) totalMes += parseFloat(data.amount || 0);
         });
 
-        const formatGBP = (val) => val.toLocaleString('en-GB', { minimumFractionDigits: 2 });
+        const formatVal = (val) => val.toLocaleString(locale, { minimumFractionDigits: 2 });
         const dashboardUrl = 'https://penny-finance.vercel.app'; 
         const personalizedLink = `${dashboardUrl}?user=${sender}`;
 
-        const replyText = `💸 *Got it! I've logged this expense* 😉\n\n` +
-          `🍽️ *${transactionData.category || 'General'}*: £${formatGBP(transactionData.amount)}\n\n` +
-          `📊 *Your summary:*\n` +
-          `• Today's spending: £${formatGBP(totalDia)}\n` +
-          `• This month's spending: £${formatGBP(totalMes)}\n\n` +
-          `📱 Open your dashboard to see the details 💙\n` +
-          `🔗 ${personalizedLink}`;
+        let replyText = "";
+        if (isBrazil) {
+          replyText = `💸 *Entendido! Gasto registrado* 😉\n\n` +
+            `🍽️ *${transactionData.category || 'Geral'}*: R$${formatVal(transactionData.amount)}\n\n` +
+            `📊 *Seu resumo:*\n` +
+            `• Gasto hoje: R$${formatVal(totalDia)}\n` +
+            `• Gasto este mês: R$${formatVal(totalMes)}\n\n` +
+            `📱 Abra seu painel para ver os detalhes 💙\n` +
+            `🔗 ${personalizedLink}`;
+        } else {
+          replyText = `💸 *Got it! I've logged this expense* 😉\n\n` +
+            `🍽️ *${transactionData.category || 'General'}*: £${formatVal(transactionData.amount)}\n\n` +
+            `📊 *Your summary:*\n` +
+            `• Today's spending: £${formatVal(totalDia)}\n` +
+            `• This month's spending: £${formatVal(totalMes)}\n\n` +
+            `📱 Open your dashboard to see the details 💙\n` +
+            `🔗 ${personalizedLink}`;
+        }
         
         console.log(`[Background] 📤 Sending custom reply to ${sender}...`);
         await sendMessage(instance, sender, replyText);
