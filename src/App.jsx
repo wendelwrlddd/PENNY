@@ -12,11 +12,11 @@ const firebaseConfig = {
 
 // Initialize Firebase
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-  console.warn('⚠️ [Firebase] Variáveis de ambiente faltando:', {
-    apiKey: !!firebaseConfig.apiKey,
-    projectId: !!firebaseConfig.projectId,
-    appId: !!firebaseConfig.appId
-  });
+  console.warn('⚠️ [Firebase] ATENÇÃO: Algumas variáveis estão faltando na Vercel!');
+  if (!firebaseConfig.apiKey) console.warn('- Faltando: VITE_FIREBASE_API_KEY');
+  if (!firebaseConfig.projectId) console.warn('- Faltando: VITE_FIREBASE_PROJECT_ID');
+  if (!firebaseConfig.appId) console.warn('- Faltando: VITE_FIREBASE_APP_ID');
+  console.log('Dica: Certifique-se de que adicionou com o prefixo VITE_ e clicou em Redeploy.');
 }
 
 const app = initializeApp(firebaseConfig);
