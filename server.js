@@ -111,7 +111,7 @@ async function processMessageBackground(text, sender, instance, source) {
       try {
         // --- Calculate Totals (Today and Month) ---
         const now = new Date();
-        const tz = 'America/Sao_Paulo';
+        const tz = 'Europe/London';
         const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
         const monthStr = todayStr.substring(0, 7);
 
@@ -133,16 +133,16 @@ async function processMessageBackground(text, sender, instance, source) {
           if (createdMonthStr === monthStr) totalMes += parseFloat(data.amount || 0);
         });
 
-        const formatBRL = (val) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        const formatGBP = (val) => val.toLocaleString('en-GB', { minimumFractionDigits: 2 });
         const dashboardUrl = 'https://penny-finance.vercel.app'; 
         const personalizedLink = `${dashboardUrl}?user=${sender}`;
 
-        const replyText = `💸 *Opa! Já registrei esse gasto* 😉\n\n` +
-          `🍽️ *${transactionData.category || 'Geral'}*: R$ ${formatBRL(transactionData.amount)}\n\n` +
-          `📊 *Como você está agora:*\n` +
-          `• Gastos hoje: R$ ${formatBRL(totalDia)}\n` +
-          `• Gastos no mês: R$ ${formatBRL(totalMes)}\n\n` +
-          `📱 Quando quiser ver tudo detalhado, é só abrir seu dashboard 💙\n` +
+        const replyText = `💸 *Got it! I've logged this expense* 😉\n\n` +
+          `🍽️ *${transactionData.category || 'General'}*: £${formatGBP(transactionData.amount)}\n\n` +
+          `📊 *Your summary:*\n` +
+          `• Today's spending: £${formatGBP(totalDia)}\n` +
+          `• This month's spending: £${formatGBP(totalMes)}\n\n` +
+          `📱 Open your dashboard to see the details 💙\n` +
           `🔗 ${personalizedLink}`;
         
         console.log(`[Background] 📤 Sending custom reply to ${sender}...`);

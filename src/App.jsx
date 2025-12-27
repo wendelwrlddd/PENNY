@@ -63,8 +63,8 @@ function App() {
     return () => unsubscribe();
   }, [userId]);
 
-  const formatCurrency = (amount, currency = 'R$') => {
-    return `${currency} ${parseFloat(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  const formatCurrency = (amount, currency = '£') => {
+    return `${currency}${parseFloat(amount || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`;
   };
 
   const parseSafeDate = (dateValue) => {
@@ -90,9 +90,9 @@ function App() {
     let date = parseSafeDate(dateValue);
     if (!date && fallbackValue) date = parseSafeDate(fallbackValue);
     
-    if (!date) return 'Data N/A';
+    if (!date) return 'Date N/A';
     
-    return date.toLocaleDateString('pt-BR', {
+    return date.toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
@@ -126,14 +126,14 @@ function App() {
 
   // Categorias principais para exibir no dashboard (mesmo que vazias)
   const mainCategories = [
-    { name: 'Alimentação', color: 'bg-orange-500' },
-    { name: 'Transporte', color: 'bg-blue-500' },
+    { name: 'Food', color: 'bg-orange-500' },
+    { name: 'Transport', color: 'bg-blue-500' },
     { name: 'Shopping', color: 'bg-pink-500' },
-    { name: 'Lazer', color: 'bg-purple-500' }
+    { name: 'Leisure', color: 'bg-purple-500' }
   ];
 
   // 4. Atividade Semanal (Volume de transações por dia)
-  const daysOfWeek = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const dailyActivity = daysOfWeek.map((day, index) => {
     // Sum transaction amounts per day (only for expenses/untyped)
     const totalAmount = transactions
@@ -179,11 +179,11 @@ function App() {
             )}
           </div>
           <div className="p-4 bg-orange-50 rounded-lg border border-orange-200 mb-6 font-sans">
-            <h3 className="text-sm font-bold text-orange-800 mb-2">💡 Dica Importante:</h3>
+            <h3 className="text-sm font-bold text-orange-800 mb-2">💡 Important Tip:</h3>
             <ul className="text-xs text-orange-700 space-y-2 list-disc pl-4">
-              <li>Verifique se escreveu <strong>API_KEY</strong> (com I) e não <strong>APT_KEY</strong>.</li>
-              <li>Certifique-se de que marcou a caixa <strong>Production</strong> nas configurações.</li>
-              <li>Após salvar na Vercel, você PRECISA fazer um <strong>Redeploy</strong>.</li>
+              <li>Check if you wrote <strong>API_KEY</strong> (with I) and not <strong>APT_KEY</strong>.</li>
+              <li>Make sure you checked the <strong>Production</strong> box in settings.</li>
+              <li>After saving on Vercel, you MUST perform a <strong>Redeploy</strong>.</li>
             </ul>
           </div>
         </div>
@@ -198,27 +198,27 @@ function App() {
           <div className="w-20 h-20 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <span className="text-4xl text-orange-500 font-bold">P</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-4">Bem-vindo ao Penny</h1>
+          <h1 className="text-3xl font-extrabold text-gray-900 mb-4">Welcome to Penny</h1>
           <p className="text-gray-600 mb-8 leading-relaxed">
-            Para ver o seu painel financeiro personalizado, utilize o link enviado para o seu 
-            <strong> WhatsApp</strong> após registrar um gasto.
+            To view your personalized financial dashboard, use the link sent to your 
+            <strong> WhatsApp</strong> after registering an expense.
           </p>
           <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 text-left">
             <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
-              🚀 Como funciona?
+              🚀 How it works?
             </h3>
             <ul className="text-sm text-blue-700 space-y-3">
               <li className="flex gap-3">
                 <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
-                Mande um gasto no WhatsApp (ex: "Café 10 reais").
+                Send an expense on WhatsApp (e.g., "Coffee 10").
               </li>
               <li className="flex gap-3">
                 <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
-                Receba a confirmação com o seu link único.
+                Receive a confirmation with your unique link.
               </li>
               <li className="flex gap-3">
                 <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">3</span>
-                Abra o link e veja seus gastos organizados!
+                Open the link and see your organized spending!
               </li>
             </ul>
           </div>
@@ -235,10 +235,10 @@ function App() {
           <div className="flex items-center gap-8">
             <h1 className="text-2xl font-bold text-gray-900">Penny</h1>
             <nav className="hidden md:flex gap-6">
-              <a href="#" className="text-gray-600 hover:text-gray-900">Início</a>
+              <a href="#" className="text-gray-600 hover:text-gray-900">Home</a>
               <a href="#" className="text-orange-500 font-medium">Dashboard</a>
-              <a href="#" className="text-gray-600 hover:text-gray-900">Carteiras</a>
-              <a href="#" className="text-gray-600 hover:text-gray-900">Transações</a>
+              <a href="#" className="text-gray-600 hover:text-gray-900">Wallets</a>
+              <a href="#" className="text-gray-600 hover:text-gray-900">Transactions</a>
             </nav>
           </div>
           <div className="flex items-center gap-4">
@@ -271,7 +271,7 @@ function App() {
               <div className="relative h-48 rounded-2xl bg-gradient-to-br from-purple-400 via-pink-400 to-orange-400 p-6 text-white overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32"></div>
                 <div className="relative z-10 flex flex-col justify-center h-full">
-                  <p className="text-sm opacity-90 mb-1">Gastos até agora.</p>
+                  <p className="text-sm opacity-90 mb-1">Total spent to date.</p>
                   <p className="text-5xl font-bold">{formatCurrency(totalExpenses)}</p>
                 </div>
               </div>
@@ -280,11 +280,11 @@ function App() {
             {/* Activity Chart */}
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Atividade</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Activity</h2>
                 <select className="text-sm text-gray-600 border border-gray-200 rounded-lg px-3 py-1">
-                  <option>Semana</option>
-                  <option>Mês</option>
-                  <option>Ano</option>
+                  <option>Week</option>
+                  <option>Month</option>
+                  <option>Year</option>
                 </select>
               </div>
               
@@ -321,7 +321,7 @@ function App() {
           <div className="space-y-6">
             {/* Spending Progress */}
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Gastos</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Spending</h2>
               
               {/* Circular Progress */}
               <div className="flex flex-col items-center mb-6">
@@ -394,8 +394,8 @@ function App() {
           {/* Recent Transactions */}
           <div className="bg-white rounded-2xl p-6 shadow-sm lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Transações Recentes</h2>
-              <button className="text-sm text-gray-600 hover:text-gray-900">Ver Todas</button>
+              <h2 className="text-lg font-semibold text-gray-900">Recent Transactions</h2>
+              <button className="text-sm text-gray-600 hover:text-gray-900">See All</button>
             </div>
             
             {loading ? (
@@ -403,7 +403,7 @@ function App() {
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent"></div>
               </div>
             ) : transactions.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">Nenhuma transação encontrada</p>
+              <p className="text-center text-gray-500 py-8">No transactions found</p>
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                 {transactions.map((transaction) => (
@@ -421,7 +421,7 @@ function App() {
                           {transaction.description || 'Transação'}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatDate(transaction.date, transaction.createdAt)} • {transaction.category || 'Geral'}
+                          {formatDate(transaction.date, transaction.createdAt)} • {transaction.category || 'General'}
                         </p>
                       </div>
                     </div>
