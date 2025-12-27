@@ -89,8 +89,11 @@ function App() {
   const dailyActivity = daysOfWeek.map((day, index) => {
     // Conta a quantidade de transações em cada dia
     const countTransactions = transactions.filter((t) => {
-      const date = new Date(t.date || t.createdAt);
-      return date.getDay() === index;
+      // Prioriza createdAt se date for inválido ou "N/A"
+      const dateStr = t.date && t.date !== 'N/A' ? t.date : t.createdAt;
+      if (!dateStr) return false;
+      const date = new Date(dateStr);
+      return !isNaN(date.getTime()) && date.getDay() === index;
     }).length;
     return countTransactions;
   });
