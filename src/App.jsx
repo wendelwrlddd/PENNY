@@ -11,6 +11,14 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+  console.warn('⚠️ [Firebase] Variáveis de ambiente faltando:', {
+    apiKey: !!firebaseConfig.apiKey,
+    projectId: !!firebaseConfig.projectId,
+    appId: !!firebaseConfig.appId
+  });
+}
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
