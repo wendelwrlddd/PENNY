@@ -127,8 +127,8 @@ function App() {
               </svg>
             </button>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-purple-500 rounded-full"></div>
-              <span className="text-sm font-medium text-gray-700">Richard Hendricks</span>
+              <img src="/profile.jpg" alt="Perfil" className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-200" />
+              <span className="text-sm font-medium text-gray-700">Wendel Monteiro</span>
             </div>
           </div>
         </div>
