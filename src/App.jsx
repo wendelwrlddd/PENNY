@@ -207,7 +207,7 @@ function App() {
           <div className="flex-1 relative">
             <div className="relative z-10 p-4 bg-white/5 border border-white/10 rounded-[40px] shadow-2xl overflow-hidden backdrop-blur-3xl">
               <img 
-                src="/assets/design_ref.png" 
+                src="/assets/hero_dashboard.png" 
                 alt="Penny Dashboard Preview" 
                 className="rounded-[32px] w-full shadow-2xl hover:scale-[1.02] transition-transform duration-700"
               />
