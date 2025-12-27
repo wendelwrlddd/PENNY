@@ -67,13 +67,21 @@ function App() {
       return new Date(dateValue.seconds * 1000);
     }
     
-    // Handle JS Date or String
+    // Handle European/Brazilian DD/MM/YYYY
+    if (typeof dateValue === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(dateValue)) {
+      const [day, month, year] = dateValue.split('/');
+      return new Date(year, month - 1, day);
+    }
+
+    // Handle JS Date or ISO String
     const date = new Date(dateValue);
     return isNaN(date.getTime()) ? null : date;
   };
 
-  const formatDate = (dateValue) => {
-    const date = parseSafeDate(dateValue);
+  const formatDate = (dateValue, fallbackValue) => {
+    let date = parseSafeDate(dateValue);
+    if (!date && fallbackValue) date = parseSafeDate(fallbackValue);
+    
     if (!date) return 'Data N/A';
     
     return date.toLocaleDateString('pt-BR', {
@@ -369,7 +377,7 @@ function App() {
                           {transaction.description || 'Transação'}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatDate(transaction.date !== 'N/A' ? transaction.date : transaction.createdAt)} • {transaction.category || 'Geral'}
+                          {formatDate(transaction.date, transaction.createdAt)} • {transaction.category || 'Geral'}
                         </p>
                       </div>
                     </div>

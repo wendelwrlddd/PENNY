@@ -136,7 +136,7 @@ async function processMessageBackground(text, sender, instance, source) {
         });
 
         const formatBRL = (val) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-        const dashboardUrl = 'https://penny-finances.vercel.app'; // Corrected URL
+        const dashboardUrl = 'https://penny-finance.vercel.app'; // Corrected URL
 
         const replyText = `💸 *Opa! Já registrei esse gasto* 😉\n\n` +
           `🍽️ *${transactionData.category || 'Geral'}*: R$ ${formatBRL(transactionData.amount)}\n\n` +

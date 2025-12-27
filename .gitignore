@@ -32,3 +32,4 @@ dist-ssr
 *firebase*adminsdk*.json
 
 .vercel
+VERCEL_IMPORT_PRONTO.txt
