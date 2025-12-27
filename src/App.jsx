@@ -55,7 +55,7 @@ function App() {
 
   // 1. Totais
   const totalExpenses = transactions
-    .filter((t) => t.type === 'expense' || !t.type) // Assume expense se não houver tipo (para robustez)
+    .filter((t) => t.type !== 'income') // Tudo que não é explicitamente 'income' entra como gasto
     .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
   const totalIncome = transactions
