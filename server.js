@@ -176,9 +176,14 @@ app.post('/webhook', (req, res) => {
 
     // CASE 2: Evolution API
     const evoEvent = body.event || body.type;
+    console.log('ℹ️ Evolution Event Type:', evoEvent);
+    
     if (evoEvent && (evoEvent === "messages.upsert" || evoEvent === "MESSAGES_UPSERT")) {
       const data = Array.isArray(body.data) ? body.data[0] : body.data;
-      if (!data) return;
+      if (!data) {
+        console.log('ℹ️ Evolution: No data in payload');
+        return;
+      }
 
       const message = data.message;
       const key = data.key;
@@ -186,6 +191,8 @@ app.post('/webhook', (req, res) => {
       
       const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
       const sender = key?.remoteJid?.split('@')[0];
+      
+      console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
 
       if (text && sender) {
         // 🔒 Filtro de Segurança: Apenas o número do usuário
