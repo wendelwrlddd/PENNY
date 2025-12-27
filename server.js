@@ -64,36 +64,48 @@ app.get('/webhook', (req, res) => {
 });
 
 // Helper function to process message in background
-async function processMessageBackground(message, business_phone_number_id) {
-  if (message.type === 'text') {
-    const messageText = message.text.body;
-    const sender = message.from;
+async function processMessageBackground(text, sender, instance, source) {
+  try {
+    console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
 
-    try {
-      console.log(`[Background] 💬 Processing message from ${sender}: ${messageText}`);
+    // 1. Extract Data with Gemini
+    console.log('[Background] 🤖 Calling Gemini AI...');
+    const transactionData = await extractFinancialData(text);
+    
+    // 2. Save to Firebase
+    const docData = {
+      ...transactionData,
+      createdAt: new Date().toISOString(),
+      originalMessage: text,
+      userPhone: sender,
+      instance: instance,
+      source: source
+    };
 
-      // 1. Extract Data with Gemini
-      console.log('[Background] 🤖 Extracting data with Gemini...');
-      const transactionData = await extractFinancialData(messageText);
-      console.log('[Background] ✅ Gemini output:', JSON.stringify(transactionData, null, 2));
+    console.log('[Background] 💾 Saving to Firestore...');
+    const docRef = await db.collection('transactions').add(docData);
+    console.log(`[Background] ✅ Saved with ID: ${docRef.id}`);
+    
+    // 3. Log Raw Message (Professional Storage)
+    await logRawMessage(instance, sender, text);
 
-      // 2. Save to Firebase
-      const docData = {
-        ...transactionData,
-        createdAt: new Date().toISOString(),
-        originalMessage: messageText,
-        sender: sender,
-        source: 'whatsapp'
-      };
+  } catch (error) {
+    console.error('[Background] ❌ Error processing message:', error);
+  }
+}
 
-      console.log('[Background] 💾 Saving to Firestore...');
-      const docRef = await db.collection('transactions').add(docData);
-      console.log(`[Background] ✅ Saved with ID: ${docRef.id}`);
-    } catch (error) {
-      console.error('[Background] ❌ Error processing message:', error);
-    }
-  } else {
-    console.log('[Background] ℹ️ Non-text message received (ignoring):', message.type);
+async function logRawMessage(instance, sender, text) {
+  try {
+    await db.collection('instancias')
+      .doc(instance)
+      .collection('mensagens')
+      .add({
+        texto: text,
+        de: sender,
+        timestamp: new Date().toISOString()
+      });
+  } catch (e) {
+    console.error('❌ Error logging raw:', e.message);
   }
 }
 
@@ -122,22 +134,50 @@ app.post('/webhook', (req, res) => {
       body = req.body;
     }
 
-    // Check if this is a WhatsApp status update (ignore them)
+    // CASE 1: Meta Official API
+    if (body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+      const message = body.entry[0].changes[0].value.messages[0];
+      if (message.type === 'text') {
+        processMessageBackground(message.text.body, message.from, 'OfficialMeta', 'whatsapp-meta');
+      } else {
+        console.log('ℹ️ Meta: Non-text message ignored');
+      }
+      return;
+    }
+
+    // CASE 2: Evolution API
+    const evoEvent = body.event || body.type;
+    if (evoEvent && (evoEvent === "messages.upsert" || evoEvent === "MESSAGES_UPSERT")) {
+      const data = Array.isArray(body.data) ? body.data[0] : body.data;
+      if (!data) return;
+
+      const message = data.message;
+      const key = data.key;
+      const instance = body.instance || body.sender || 'UnknownInstance';
+      
+      const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
+      const sender = key?.remoteJid?.split('@')[0];
+
+      if (text && sender) {
+        // 🔒 Filtro de Segurança: Apenas o número do usuário
+        if (sender === '557391082831' || sender === '73991082831') {
+          processMessageBackground(text, sender, instance, 'whatsapp-evolution');
+        } else {
+          console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
+        }
+      } else {
+        console.log('ℹ️ Evolution: No text or sender found');
+      }
+      return;
+    }
+
+    // Default: Check if this is a WhatsApp status update (ignore them)
     if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
       console.log('ℹ️ Status update received');
       return;
     }
 
-    // Check for messages
-    if (body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
-      const message = body.entry[0].changes[0].value.messages[0];
-      const business_phone_number_id = body.entry[0].changes[0].value.metadata?.phone_number_id;
-
-      // Chama o processamento em background (SEM AWAIT)
-      processMessageBackground(message, business_phone_number_id);
-    } else {
-      console.log('ℹ️ Webhook received but no message found');
-    }
+    console.log('ℹ️ Webhook received but unrecognized event');
 
   } catch (error) {
     console.error('❌ Error in webhook handler:', error);

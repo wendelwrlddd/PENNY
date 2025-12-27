@@ -1,0 +1,22 @@
+app = "penny-evolution-api"
+primary_region = "gru"
+
+[build]
+  image = "atendai/evolution-api:v1.8.2"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[env]
+  AUTHENTICATION_TYPE = "apikey"
+  DATABASE_ENABLED = "false"
+  DATABASE_PROVIDER = "postgresql" # Added to prevent Prisma errors even if disabled
+  STORE_MESSAGES = "true"
+
+[[mounts]]
+  source = "evolution_data"
+  destination = "/evolution/store"
