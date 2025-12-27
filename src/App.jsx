@@ -31,6 +31,7 @@ function App() {
     const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      console.log(`📊 [Firestore] Recebido snapshot com ${snapshot.size} documentos`);
       const transactionsData = [];
       snapshot.forEach((doc) => {
         transactionsData.push({ id: doc.id, ...doc.data() });
@@ -38,7 +39,12 @@ function App() {
       setTransactions(transactionsData);
       setLoading(false);
     }, (error) => {
-      console.error('Erro ao buscar transações:', error);
+      console.error('❌ [Firestore] Erro ao buscar transações:', error);
+      console.error('Detalhes do erro:', {
+        code: error.code,
+        message: error.message,
+        name: error.name
+      });
       setLoading(false);
     });
 
