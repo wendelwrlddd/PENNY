@@ -92,11 +92,15 @@ async function processMessageBackground(text, sender, instance, source) {
 
     // 4. Send Confirmation on WhatsApp (Evolution API)
     if (source === 'whatsapp-evolution') {
-      const amountFormatted = `${transactionData.currency} ${transactionData.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-      const replyText = `✅ *${amountFormatted}* gastos com *${transactionData.category || 'Geral'}*.\n\nSeu dashboard foi atualizado! 🚀\n🔗 https://penny-finances.vercel.app/`;
-      
-      console.log(`[Background] 📤 Sending reply to ${sender}...`);
-      await sendMessage(instance, sender, replyText);
+      try {
+        const amountFormatted = `${transactionData.currency} ${transactionData.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+        const replyText = `✅ *${amountFormatted}* gastos com *${transactionData.category || 'Geral'}*.\n\nSeu dashboard foi atualizado! 🚀\n🔗 https://penny-finances.vercel.app/`;
+        
+        console.log(`[Background] 📤 Sending reply to ${sender}...`);
+        await sendMessage(instance, sender, replyText);
+      } catch (replyError) {
+        console.error('[Background] ⚠️ Failed to send WhatsApp reply:', replyError.message);
+      }
     }
 
   } catch (error) {
