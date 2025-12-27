@@ -64,9 +64,8 @@ function App() {
 
   const balance = totalIncome - totalExpenses;
 
-  // 2. Porcentagem de Gastos (Orçamento base de R$ 5000)
-  const budget = 5000;
-  const spendingPercentage = Math.min(Math.round((totalExpenses / budget) * 100), 100);
+  // 2. Porcentagem de Gastos (1% por transação, limitado a 100%)
+  const spendingPercentage = Math.min(transactions.length, 100);
 
   // 3. Agrupamento por Categorias Dinâmico
   const categoriesMap = transactions
@@ -85,18 +84,17 @@ function App() {
     { name: 'Lazer', color: 'bg-purple-500' }
   ];
 
-  // 4. Atividade Semanal (Últimos 7 dias)
+  // 4. Atividade Semanal (Volume de transações por dia)
   const daysOfWeek = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const dailyActivity = daysOfWeek.map((day, index) => {
-    const totalDay = transactions.reduce((sum, t) => {
+    // Conta a quantidade de transações em cada dia
+    const countTransactions = transactions.filter((t) => {
       const date = new Date(t.date || t.createdAt);
-      if (date.getDay() === index) {
-        return sum + parseFloat(t.amount || 0);
-      }
-      return sum;
-    }, 0);
-    return totalDay;
+      return date.getDay() === index;
+    }).length;
+    return countTransactions;
   });
+
   const maxDaily = Math.max(...dailyActivity, 1);
   const chartHeights = dailyActivity.map(val => (val / maxDaily) * 100);
 
