@@ -98,33 +98,31 @@ async function processMessageBackground(text, sender, instance, source) {
       source: source
     };
 
-    console.log('[Background] 💾 Saving to Firestore...');
-    const docRef = await db.collection('transactions').add(docData);
+    // 2. Save to Firebase (User-Specific Subcollection)
+    console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
+    const docRef = await db.collection('usuarios').doc(sender).collection('transactions').add(docData);
     console.log(`[Background] ✅ Saved with ID: ${docRef.id}`);
     
-    // 3. Log Raw Message (Professional Storage)
+    // 3. Log Raw Message
     await logRawMessage(instance, sender, text);
 
     // 4. Send Confirmation on WhatsApp (Evolution API)
     if (source === 'whatsapp-evolution') {
       try {
         // --- Calculate Totals (Today and Month) ---
-        // We use Brazil Time (UTC-3) for accurate daily/monthly tracking
         const now = new Date();
         const tz = 'America/Sao_Paulo';
-        const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
-        const monthStr = todayStr.substring(0, 7); // YYYY-MM
+        const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
+        const monthStr = todayStr.substring(0, 7);
 
-        const totalsSnapshot = await db.collection('transactions')
-          .where('userPhone', '==', sender)
-          .get();
+        // Fetch user-specific totals
+        const totalsSnapshot = await db.collection('usuarios').doc(sender).collection('transactions').get();
 
         let totalDia = 0;
         let totalMes = 0;
 
         totalsSnapshot.forEach(doc => {
           const data = doc.data();
-          // Logic: Sum everything that IS NOT income
           if (data.type === 'income') return;
 
           const created = new Date(data.createdAt || data.date);
@@ -136,7 +134,8 @@ async function processMessageBackground(text, sender, instance, source) {
         });
 
         const formatBRL = (val) => val.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-        const dashboardUrl = 'https://penny-finance.vercel.app'; // Corrected URL
+        const dashboardUrl = 'https://penny-finance.vercel.app'; 
+        const personalizedLink = `${dashboardUrl}?user=${sender}`;
 
         const replyText = `💸 *Opa! Já registrei esse gasto* 😉\n\n` +
           `🍽️ *${transactionData.category || 'Geral'}*: R$ ${formatBRL(transactionData.amount)}\n\n` +
@@ -144,7 +143,7 @@ async function processMessageBackground(text, sender, instance, source) {
           `• Gastos hoje: R$ ${formatBRL(totalDia)}\n` +
           `• Gastos no mês: R$ ${formatBRL(totalMes)}\n\n` +
           `📱 Quando quiser ver tudo detalhado, é só abrir seu dashboard 💙\n` +
-          `🔗 ${dashboardUrl}`;
+          `🔗 ${personalizedLink}`;
         
         console.log(`[Background] 📤 Sending custom reply to ${sender}...`);
         await sendMessage(instance, sender, replyText);

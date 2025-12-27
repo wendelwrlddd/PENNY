@@ -30,9 +30,22 @@ function App() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // 1. Get User ID from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const userId = urlParams.get('user');
+
   useEffect(() => {
-    // Escuta em tempo real para as transações
-    const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    // 2. Query only the specific user's transactions
+    console.log(`📊 [Dashboard] Carregando dados para o usuário: ${userId}`);
+    const q = query(
+      collection(db, 'usuarios', userId, 'transactions'), 
+      orderBy('createdAt', 'desc')
+    );
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       console.log(`📊 [Firestore] Recebido snapshot com ${snapshot.size} documentos`);
@@ -44,16 +57,11 @@ function App() {
       setLoading(false);
     }, (error) => {
       console.error('❌ [Firestore] Erro ao buscar transações:', error);
-      console.error('Detalhes do erro:', {
-        code: error.code,
-        message: error.message,
-        name: error.name
-      });
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [userId]);
 
   const formatCurrency = (amount, currency = 'R$') => {
     return `${currency} ${parseFloat(amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -176,6 +184,42 @@ function App() {
               <li>Verifique se escreveu <strong>API_KEY</strong> (com I) e não <strong>APT_KEY</strong>.</li>
               <li>Certifique-se de que marcou a caixa <strong>Production</strong> nas configurações.</li>
               <li>Após salvar na Vercel, você PRECISA fazer um <strong>Redeploy</strong>.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // --- Welcome Screen (No User ID) ---
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white p-10 rounded-3xl shadow-xl max-w-lg w-full text-center border border-gray-100 font-sans">
+          <div className="w-20 h-20 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <span className="text-4xl text-orange-500 font-bold">P</span>
+          </div>
+          <h1 className="text-3xl font-extrabold text-gray-900 mb-4">Bem-vindo ao Penny</h1>
+          <p className="text-gray-600 mb-8 leading-relaxed">
+            Para ver o seu painel financeiro personalizado, utilize o link enviado para o seu 
+            <strong> WhatsApp</strong> após registrar um gasto.
+          </p>
+          <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 text-left">
+            <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+              🚀 Como funciona?
+            </h3>
+            <ul className="text-sm text-blue-700 space-y-3">
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
+                Mande um gasto no WhatsApp (ex: "Café 10 reais").
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
+                Receba a confirmação com o seu link único.
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">3</span>
+                Abra o link e veja seus gastos organizados!
+              </li>
             </ul>
           </div>
         </div>
