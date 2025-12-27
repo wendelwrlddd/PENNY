@@ -150,298 +150,342 @@ function App() {
   const MAX_CHART_THRESHOLD = 500;
   const chartHeights = dailyActivity;
 
-  // --- Diagnostics & Errors ---
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-    return (
-      <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-xl shadow-2xl max-w-md w-full border-t-4 border-red-500">
-          <h1 className="text-2xl font-bold text-red-600 mb-4 flex items-center gap-2">
-            ⚠️ Erro de Configuração
-          </h1>
-          <p className="text-gray-700 mb-6 font-medium">
-            O Painel não conseguiu carregar porque faltam variáveis de ambiente na Vercel.
-          </p>
-          <div className="space-y-3 bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
-            {!firebaseConfig.apiKey && (
-              <p className="text-sm font-mono text-red-500 flex items-center gap-2">
-                ❌ VITE_FIREBASE_API_KEY
-              </p>
-            )}
-            {!firebaseConfig.projectId && (
-              <p className="text-sm font-mono text-red-500 flex items-center gap-2">
-                ❌ VITE_FIREBASE_PROJECT_ID
-              </p>
-            )}
-            {!firebaseConfig.appId && (
-              <p className="text-sm font-mono text-red-500 flex items-center gap-2">
-                ❌ VITE_FIREBASE_APP_ID
-              </p>
-            )}
-          </div>
-          <div className="p-4 bg-orange-50 rounded-lg border border-orange-200 mb-6 font-sans">
-            <h3 className="text-sm font-bold text-orange-800 mb-2">💡 Important Tip:</h3>
-            <ul className="text-xs text-orange-700 space-y-2 list-disc pl-4">
-              <li>Check if you wrote <strong>API_KEY</strong> (with I) and not <strong>APT_KEY</strong>.</li>
-              <li>Make sure you checked the <strong>Production</strong> box in settings.</li>
-              <li>After saving on Vercel, you MUST perform a <strong>Redeploy</strong>.</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  // --- Welcome Screen (No User ID) ---
-  if (!userId) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white p-10 rounded-3xl shadow-xl max-w-lg w-full text-center border border-gray-100 font-sans">
-          <div className="w-20 h-20 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <span className="text-4xl text-orange-500 font-bold">P</span>
-          </div>
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-4">Welcome to Penny</h1>
-          <p className="text-gray-600 mb-8 leading-relaxed">
-            To view your personalized financial dashboard, use the link sent to your 
-            <strong> WhatsApp</strong> after registering an expense.
-          </p>
-          <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 text-left">
-            <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
-              🚀 How it works?
-            </h3>
-            <ul className="text-sm text-blue-700 space-y-3">
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">1</span>
-                Send an expense on WhatsApp (e.g., "Coffee 10").
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
-                Receive a confirmation with your unique link.
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-200 rounded-full flex items-center justify-center text-[10px] font-bold">3</span>
-                Open the link and see your organized spending!
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // --- Components ---
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
+  const LandingPage = () => (
+    <div className="min-h-screen bg-black text-white selection:bg-primary selection:text-black overflow-x-hidden">
+      {/* Navbar */}
+      <nav className="fixed top-0 w-full z-50 glass border-b border-white/5 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <h1 className="text-2xl font-bold text-gray-900">Penny</h1>
-            <nav className="hidden md:flex gap-6">
-              <a href="#" className="text-gray-600 hover:text-gray-900">Home</a>
-              <a href="#" className="text-orange-500 font-medium">Dashboard</a>
-              <a href="#" className="text-gray-600 hover:text-gray-900">Wallets</a>
-              <a href="#" className="text-gray-600 hover:text-gray-900">Transactions</a>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4">
-            <button className="p-2 hover:bg-gray-100 rounded-lg">
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </button>
-            <button className="p-2 hover:bg-gray-100 rounded-lg">
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            </button>
-            <div className="flex items-center gap-2">
-              <img src="/profile.jpg" alt="Perfil" className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-200" />
-              <span className="text-sm font-medium text-gray-700">Wendel Monteiro</span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <span className="text-black font-bold">P</span>
             </div>
+            <span className="text-xl font-bold tracking-tighter">Penny</span>
           </div>
+          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
+            <a href="#features" className="hover:text-white transition-colors">Features</a>
+            <a href="#preview" className="hover:text-white transition-colors">Preview</a>
+            <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
+          </div>
+          <button className="px-5 py-2 bg-primary text-black text-sm font-bold rounded-full hover:scale-105 transition-transform">
+            Get Started
+          </button>
         </div>
-      </header>
+      </nav>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Top Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Left Column - Cards & Activity */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* My Cards - Simplified */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="relative h-48 rounded-2xl bg-gradient-to-br from-purple-400 via-pink-400 to-orange-400 p-6 text-white overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32"></div>
-                <div className="relative z-10 flex flex-col justify-center h-full">
-                  <p className="text-sm opacity-90 mb-1">Total spent to date.</p>
-                  <p className="text-5xl font-bold">{formatCurrency(totalExpenses)}</p>
+      {/* Hero Section */}
+      <section className="relative pt-32 pb-20 px-6">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-primary/10 blur-[120px] rounded-full pointer-events-none"></div>
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-16">
+          <div className="flex-1 text-center lg:text-left">
+            <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6">
+              Let's manage your <span className="text-primary italic">finances</span> now, to make the future easier
+            </h1>
+            <p className="text-xl text-gray-400 max-w-xl mx-auto lg:mx-0 mb-10 leading-relaxed">
+              Penny is your automated financial companion. Just text your expenses on WhatsApp, and we'll do the magic. No apps to download, no friction.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+              <button className="w-full sm:w-auto px-8 py-4 bg-primary text-black font-bold rounded-full hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all">
+                Get Started
+              </button>
+              <button className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
+                <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
+                  <svg className="w-3 h-3 fill-white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                 </div>
-              </div>
+                Introduction
+              </button>
             </div>
-
-            {/* Activity Chart */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Activity</h2>
-                <select className="text-sm text-gray-600 border border-gray-200 rounded-lg px-3 py-1">
-                  <option>Week</option>
-                  <option>Month</option>
-                  <option>Year</option>
-                </select>
-              </div>
-              
-              {/* Simple Activity Visualization */}
-              <div className="h-48 flex items-end justify-between gap-3">
-                {chartHeights.map((amount, i) => {
-                  const percentage = Math.min((amount / MAX_CHART_THRESHOLD) * 100, 100);
-                  return (
-                    <div key={i} className="flex-1 h-full flex flex-col justify-end items-center gap-2">
-                      <div 
-                        className="w-full bg-red-500 rounded-md transition-all hover:bg-red-600 shadow-sm relative group"
-                        style={{ 
-                          height: `${Math.max(percentage, amount > 0 ? 5 : 0)}%`,
-                          minHeight: amount > 0 ? '8px' : '2px'
-                        }}
-                      >
-                        {amount > 0 && (
-                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 shadow-lg">
-                            {formatCurrency(amount)}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-gray-400 font-medium shrink-0">
-                        {daysOfWeek[i]}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="mt-12 flex items-center justify-center lg:justify-start gap-8">
+              <div><p className="text-2xl font-bold">25k+</p><p className="text-xs text-gray-500 uppercase tracking-widest">Happy Customers</p></div>
+              <div className="w-px h-8 bg-white/10"></div>
+              <div><p className="text-2xl font-bold">11+</p><p className="text-xs text-gray-500 uppercase tracking-widest">Years of exp</p></div>
+              <div className="w-px h-8 bg-white/10"></div>
+              <div><p className="text-2xl font-bold">20</p><p className="text-xs text-gray-500 uppercase tracking-widest">Countries</p></div>
             </div>
           </div>
+          <div className="flex-1 relative">
+            <div className="relative z-10 p-4 bg-white/5 border border-white/10 rounded-[40px] shadow-2xl overflow-hidden backdrop-blur-3xl">
+              <img 
+                src="/assets/design_ref.png" 
+                alt="Penny Dashboard Preview" 
+                className="rounded-[32px] w-full shadow-2xl hover:scale-[1.02] transition-transform duration-700"
+              />
+            </div>
+            {/* Background blobs */}
+            <div className="absolute -bottom-10 -right-10 w-64 h-64 bg-primary/20 blur-[80px] rounded-full"></div>
+          </div>
+        </div>
+      </section>
 
-          {/* Right Column - Stats & Progress */}
-          <div className="space-y-6">
-            {/* Spending Progress */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Spending</h2>
-              
-              {/* Circular Progress */}
-              <div className="flex flex-col items-center mb-6">
-                <div className="relative w-40 h-40">
-                  <svg className="transform -rotate-90 w-40 h-40">
-                    <circle
-                      cx="80"
-                      cy="80"
-                      r="70"
-                      stroke="#f3f4f6"
-                      strokeWidth="12"
-                      fill="none"
-                    />
-                    <circle
-                      cx="80"
-                      cy="80"
-                      r="70"
-                      stroke="url(#gradient)"
-                      strokeWidth="12"
-                      fill="none"
-                      strokeDasharray={`${2 * Math.PI * 70}`}
-                      strokeDashoffset={`${2 * Math.PI * 70 * (1 - spendingPercentage / 100)}`}
-                      strokeLinecap="round"
-                    />
-                    <defs>
-                      <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#a855f7" />
-                        <stop offset="100%" stopColor="#ec4899" />
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <p className="text-3xl font-bold text-gray-900">{spendingPercentage}%</p>
-                    </div>
-                  </div>
+      {/* Brands */}
+      <div className="max-w-7xl mx-auto px-6 py-12 border-y border-white/5 flex flex-wrap items-center justify-around gap-8 opacity-40 grayscale hover:grayscale-0 transition-all">
+        <span className="text-2xl font-bold tracking-tighter italic">slack</span>
+        <span className="text-2xl font-bold tracking-tighter italic">Dropbox</span>
+        <span className="text-2xl font-bold tracking-tighter italic">VISA</span>
+        <span className="text-2xl font-bold tracking-tighter italic">Wise</span>
+      </div>
+
+      {/* Features Section */}
+      <section id="features" className="py-32 px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-6">We are a platform with the <br/> most complete features</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { title: 'Guaranteed safety', desc: 'All forms of transactions and information about your finances are 100% protected.', icon: '🛡️' },
+              { title: 'Saving global payments', desc: 'Penny is present in 20 countries, this makes us provide payment features globally.', icon: '🌐' },
+              { title: 'Verified Platform', desc: 'Penny is a verified payment platform according to government regulations.', icon: '✅' }
+            ].map((f, i) => (
+              <div key={i} className="p-8 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 transition-colors group">
+                <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-2xl mb-6 group-hover:scale-110 transition-transform">
+                  {f.icon}
                 </div>
+                <h3 className="text-xl font-bold mb-4">{f.title}</h3>
+                <p className="text-gray-400 leading-relaxed text-sm">{f.desc}</p>
               </div>
-
-              {/* Category Breakdown */}
-              <div className="space-y-3">
-                {mainCategories.map((cat, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${cat.color}`}></div>
-                      <span className="text-sm text-gray-600">{cat.name}</span>
-                    </div>
-                    <span className="text-sm font-medium text-gray-900">
-                      {formatCurrency(categoriesMap[cat.name] || 0)}
-                    </span>
-                  </div>
-                ))}
-                {/* Outros / Dinâmico */}
-                {Object.keys(categoriesMap).filter(c => !mainCategories.find(mc => mc.name === c)).map((otherCat, i) => (
-                  <div key={`other-${i}`} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                      <span className="text-sm text-gray-600">{otherCat}</span>
-                    </div>
-                    <span className="text-sm font-medium text-gray-900">{formatCurrency(categoriesMap[otherCat])}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
         </div>
+      </section>
 
-        {/* Bottom Section - Payments & Transactions */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Transactions */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm lg:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Recent Transactions</h2>
-              <button className="text-sm text-gray-600 hover:text-gray-900">See All</button>
-            </div>
-            
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent"></div>
-              </div>
-            ) : transactions.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No transactions found</p>
-            ) : (
-              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                {transactions.map((transaction) => (
-                  <div key={transaction.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 px-2 rounded-lg transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        transaction.type === 'expense' || !transaction.type ? 'bg-red-100' : 'bg-green-100'
-                      }`}>
-                        <span className="text-lg">
-                          {transaction.type === 'expense' || !transaction.type ? '↓' : '↑'}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {transaction.description || 'Transação'}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {formatDate(transaction.date, transaction.createdAt)} • {transaction.category || 'General'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-semibold ${
-                        transaction.type === 'expense' || !transaction.type ? 'text-red-600' : 'text-green-600'
-                      }`}>
-                        {transaction.type === 'expense' || !transaction.type ? '-' : '+'}
-                        {formatCurrency(transaction.amount, transaction.currency)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* Preview Section */}
+      <section id="preview" className="py-20 px-6 bg-white/[0.02]">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col lg:flex-row items-center gap-20 py-20">
+             <div className="flex-1 scale-110">
+                <img src="/assets/dashboard_preview_1.png" alt="Dashboard Chart" className="rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10" />
+             </div>
+             <div className="flex-1 space-y-8">
+                <h2 className="text-4xl font-bold leading-tight">We help you to manage your finances neatly and clearly</h2>
+                <p className="text-gray-400 leading-relaxed">All forms of your transactions will be summarized in statistics and expense details. For use in your detailed financial report.</p>
+                <button className="px-8 py-4 bg-primary text-black font-bold rounded-full hover:scale-105 transition-transform">Learn more</button>
+             </div>
           </div>
         </div>
-      </main>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-20 px-6 border-t border-white/5">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between gap-12">
+          <div className="max-w-xs">
+             <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                  <span className="text-black font-bold">P</span>
+                </div>
+                <span className="text-xl font-bold tracking-tighter uppercase">Penny</span>
+             </div>
+             <p className="text-sm text-gray-500 leading-relaxed">The easiest way to track your money, right from your WhatsApp.</p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-12">
+             <div><h4 className="font-bold mb-6">Product</h4><ul className="text-sm text-gray-500 space-y-4"><li>Dashboard</li><li>Features</li><li>Pricing</li></ul></div>
+             <div><h4 className="font-bold mb-6">Company</h4><ul className="text-sm text-gray-500 space-y-4"><li>About Us</li><li>Careers</li><li>Contact</li></ul></div>
+             <div><h4 className="font-bold mb-6">Legal</h4><ul className="text-sm text-gray-500 space-y-4"><li>Privacy</li><li>Terms</li></ul></div>
+          </div>
+        </div>
+        <div className="text-center mt-20 pt-8 border-t border-white/5 text-xs text-gray-600">
+          © {new Date().getFullYear()} Penny Finance. All rights reserved.
+        </div>
+      </footer>
     </div>
   );
+
+  const Dashboard = () => (
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      {/* Search/Header for Mobile */}
+      <div className="lg:hidden flex items-center justify-between px-6 py-4 border-b border-white/5">
+        <h1 className="text-2xl font-bold tracking-tight text-primary">Penny</h1>
+        <div className="flex items-center gap-4">
+           <img src="/profile.jpg" className="w-8 h-8 rounded-full border border-primary/20" alt="profile" />
+        </div>
+      </div>
+
+      <div className="flex">
+        {/* Sidebar - Desktop */}
+        <aside className="hidden lg:flex w-64 h-screen fixed bg-black border-r border-white/5 p-6 flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-12">
+              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+                <span className="text-black font-bold text-xl">P</span>
+              </div>
+              <span className="text-2xl font-bold">Penny</span>
+            </div>
+            <nav className="space-y-2">
+              {['Home', 'Dashboard', 'Wallets', 'Transactions'].map((item) => (
+                <a key={item} href="#" className={`flex items-center px-4 py-3 rounded-xl transition-all ${item === 'Dashboard' ? 'bg-primary/10 text-primary font-bold' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                  {item}
+                </a>
+              ))}
+            </nav>
+          </div>
+          <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+             <div className="flex items-center gap-3">
+                <img src="/profile.jpg" className="w-10 h-10 rounded-full border border-primary/30" alt="profile" />
+                <div>
+                  <p className="text-xs font-bold truncate max-w-[100px]">Wendel Monteiro</p>
+                  <p className="text-[10px] text-gray-500">Free Account</p>
+                </div>
+             </div>
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 lg:ml-64 p-4 lg:p-8">
+          <div className="max-w-6xl mx-auto space-y-8">
+            {/* Header Desktop */}
+            <div className="hidden lg:flex items-center justify-between">
+               <div>
+                  <h2 className="text-3xl font-bold">Dashboard</h2>
+                  <p className="text-gray-500 text-sm">Welcome back, Wendel</p>
+               </div>
+               <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">🔔</div>
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">⚙️</div>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Cards Section */}
+              <div className="lg:col-span-2 space-y-8">
+                {/* Balance Card */}
+                <div className="relative overflow-hidden group">
+                   <div className="absolute inset-0 bg-gradient-to-br from-primary via-[#166534] to-black opacity-90 group-hover:scale-105 transition-transform duration-700"></div>
+                   <div className="relative p-8 rounded-3xl border border-white/20 min-h-[220px] flex flex-col justify-center">
+                      <p className="text-xs uppercase tracking-[0.2em] font-bold opacity-70 mb-2">Total spent to date</p>
+                      <h3 className="text-6xl font-black tracking-tight">{formatCurrency(totalExpenses)}</h3>
+                   </div>
+                </div>
+
+                {/* Activity Chart */}
+                <div className="p-6 bg-white/5 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-md">
+                   <div className="flex items-center justify-between mb-8">
+                      <h3 className="font-bold text-lg">Activity Statistics</h3>
+                      <select className="bg-black border border-white/10 text-xs rounded-lg px-3 py-1 text-gray-400">
+                        <option>Week</option>
+                        <option>Month</option>
+                      </select>
+                   </div>
+                   <div className="h-48 flex items-end justify-between gap-4">
+                      {chartHeights.map((amount, i) => {
+                        const percentage = Math.min((amount / MAX_CHART_THRESHOLD) * 100, 100);
+                        return (
+                          <div key={i} className="flex-1 group flex flex-col items-center gap-3">
+                            <div className="w-full relative flex flex-col justify-end h-32">
+                               <div 
+                                 className="w-full bg-primary/20 rounded-lg group-hover:bg-primary/40 transition-all duration-300 relative"
+                                 style={{ height: `${Math.max(percentage, amount > 0 ? 5 : 0)}%` }}
+                               >
+                                 <div className="absolute inset-0 bg-primary opacity-0 group-hover:opacity-20 transition-opacity blur-lg"></div>
+                                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-primary">
+                                    {formatCurrency(amount)}
+                                 </div>
+                               </div>
+                            </div>
+                            <span className="text-[10px] text-gray-600 font-bold uppercase">{daysOfWeek[i]}</span>
+                          </div>
+                        );
+                      })}
+                   </div>
+                </div>
+              </div>
+
+              {/* Sidebar Stats */}
+              <div className="space-y-8">
+                {/* Circular Spending */}
+                <div className="p-8 bg-white/5 border border-white/10 rounded-3xl flex flex-col items-center text-center">
+                   <h3 className="font-bold mb-8">Spending Goal</h3>
+                   <div className="relative w-40 h-40 mb-8">
+                      <svg className="w-full h-full -rotate-90">
+                        <circle cx="80" cy="80" r="70" fill="none" stroke="#222" strokeWidth="12" />
+                        <circle cx="80" cy="80" r="70" fill="none" stroke="currentColor" strokeWidth="12" strokeDasharray={440} strokeDashoffset={440 - (440 * spendingPercentage) / 100} className="text-primary" strokeLinecap="round" />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-3xl font-black">{spendingPercentage}%</span>
+                        <span className="text-[10px] text-gray-500 uppercase">of month</span>
+                      </div>
+                   </div>
+                   <div className="w-full space-y-4">
+                      {mainCategories.map((cat, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                           <div className="flex items-center gap-3">
+                              <div className={`w-3 h-3 rounded-full ${cat.color} shadow-[0_0_8px_currentColor]`}></div>
+                              <span className="text-xs text-gray-400 font-medium">{cat.name}</span>
+                           </div>
+                           <span className="text-xs font-bold">{formatCurrency(categoriesMap[cat.name] || 0)}</span>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+              </div>
+
+              {/* Transações Full Width Bottom */}
+              <div className="lg:col-span-3 p-8 bg-white/5 border border-white/10 rounded-[32px] shadow-2xl">
+                 <div className="flex items-center justify-between mb-8">
+                    <h3 className="text-xl font-bold tracking-tight">Recent Transactions</h3>
+                    <button className="text-xs text-primary font-bold hover:underline">See All</button>
+                 </div>
+                 
+                 {loading ? (
+                    <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div></div>
+                 ) : transactions.length === 0 ? (
+                    <p className="text-center text-gray-600 py-12 italic">No transactions recorded yet.</p>
+                 ) : (
+                    <div className="space-y-4">
+                       {transactions.map((t) => (
+                         <div key={t.id} className="group flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all">
+                            <div className="flex items-center gap-4">
+                               <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110 ${t.type === 'income' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                  {t.type === 'income' ? '↑' : '↓'}
+                               </div>
+                               <div>
+                                  <p className="text-sm font-bold">{t.description || 'Transaction'}</p>
+                                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(t.date, t.createdAt)} • {t.category || 'General'}</p>
+                               </div>
+                            </div>
+                            <div className="text-right">
+                               <p className={`font-black text-lg ${t.type === 'income' ? 'text-green-500' : 'text-red-500'}`}>
+                                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                               </p>
+                            </div>
+                         </div>
+                       ))}
+                    </div>
+                 )}
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+
+  // --- Main Render Logic ---
+
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="bg-muted p-8 rounded-3xl border border-red-500/30 max-w-md w-full text-center">
+          <h1 className="text-2xl font-bold text-red-500 mb-4">⚠️ Configuration Error</h1>
+          <p className="text-gray-400 mb-6">Environment variables are missing on Vercel.</p>
+          <div className="p-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 text-xs text-orange-200 text-left">
+            <h3 className="font-bold mb-2">💡 Tip:</h3>
+            <ul className="space-y-1 list-disc pl-4 opacity-80">
+              <li>Check VITE_FIREBASE_API_KEY</li>
+              <li>Make sure Production is checked</li>
+              <li>Perform a Redeploy</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userId) {
+    return <LandingPage />;
+  }
+
+  return <Dashboard />;
 }
 
 export default App;
