@@ -74,20 +74,22 @@ async function processMessageBackground(text, sender, instance, source) {
     console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
     
     let transactionData;
+    let aiFailed = false;
     try {
       transactionData = await extractFinancialData(text, isBrazil);
     } catch (aiError) {
-      console.error('[Background] ⚠️ Gemini failed, using fallback:', aiError.message);
-      // Fallback data
-      transactionData = {
-        amount: 0,
-        currency: isBrazil ? "R$" : "£",
-        category: isBrazil ? "Erro IA" : "AI Error",
-        description: `(Auto-Processado) ${text.substring(0, 50)}...`,
-        date: new Date().toISOString(),
-        type: "expense",
-        error: aiError.message
-      };
+      console.error('[Background] ⚠️ Gemini failed:', aiError.message);
+      aiFailed = true;
+    }
+
+    if (aiFailed) {
+      if (source === 'whatsapp-evolution') {
+        const doubtMsg = isBrazil 
+          ? `🤔 *Fiquei em dúvida!* Não consegui entender muito bem essa mensagem. Pode repetir de uma forma mais clara?`
+          : `🤔 *I'm in doubt!* I couldn't quite understand that message. Could you please rephrase it?`;
+        await sendMessage(instance, sender, doubtMsg);
+      }
+      return;
     }
     
     // 2. Handle based on Intent
@@ -175,6 +177,26 @@ async function processMessageBackground(text, sender, instance, source) {
              : `I understand you have £${amountRemaining.toFixed(2)}, but I don't know your salary yet to calculate your spending. Can you tell me your income?`;
            await sendMessage(instance, sender, incomeMissingMsg);
          }
+      }
+      return;
+    }
+
+    if (transactionData.intent === 'UNCERTAIN') {
+      console.log(`[Background] ❓ Uncertain intent for ${sender}. Suggestion: ${transactionData.suggestion}`);
+      if (source === 'whatsapp-evolution') {
+        let reply = "";
+        const suggestion = transactionData.suggestion;
+
+        if (isBrazil) {
+          reply = suggestion 
+            ? `🤔 *Fiquei em dúvida...* Você quis dizer: "_${suggestion}_"?`
+            : `🤔 *Hum... não tenho certeza.* Poderia repetir de uma forma mais simples?`;
+        } else {
+          reply = suggestion
+            ? `🤔 *I'm in doubt...* Did you mean: "_${suggestion}_"?`
+            : `🤔 *Hmm... I'm not sure.* Could you please rephrase that for me?`;
+        }
+        await sendMessage(instance, sender, reply);
       }
       return;
     }
