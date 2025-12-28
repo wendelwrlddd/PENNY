@@ -405,7 +405,7 @@ app.post('/webhook', (req, res) => {
 
       if (text && sender) {
         // 🔒 Filtro de Segurança: Apenas o número do usuário
-        if (sender === '557391082831' || sender === '73991082831') {
+        if (sender === '557391082831' || sender === '73991082831' || sender === '557381193570') {
           processMessageBackground(text, sender, instance, 'whatsapp-evolution');
         } else {
           console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
