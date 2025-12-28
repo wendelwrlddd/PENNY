@@ -430,6 +430,23 @@ async function checkProactiveMessages() {
           message = isBrazil
             ? "Vi que você é assalariado! Que dia do mês você costuma receber seu salário? 📅"
             : "I see you're salaried! What day of the month do you usually receive your salary? 📅";
+        } else {
+          // Check if user has synced balance this month
+          const monthStr = new Date().toISOString().substring(0, 7);
+          const monthTxs = await doc.ref.collection('transactions')
+            .where('createdAt', '>=', monthStr + '-01')
+            .limit(1)
+            .get();
+
+          if (monthTxs.empty) {
+            // Se é assalariado e não é dia de pagamento, perguntar quanto tem na conta para sincronizar
+            const today = new Date().getDate();
+            if (userData.isSalaried && today !== userData.payDay) {
+               message = isBrazil
+                ? "Para eu organizar seu saldo hoje, quanto você tem na sua conta agora? Assim calculo quanto você já gastou este mês! 📈"
+                : "To organize your balance today, how much do you have in your account right now? This way I can calculate how much you've already spent this month! 📈";
+            }
+          }
         }
 
         if (message) {
