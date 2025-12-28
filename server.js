@@ -126,7 +126,7 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'SYNC') {
       console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
       const reportedBalance = parseFloat(transactionData.amount);
-      const { currentBalance } = await calculateUserTotals(userRef);
+      const { currentBalance } = await calculateUserTotals(userRef, isBrazil);
       
       const diff = reportedBalance - currentBalance;
 
@@ -144,15 +144,15 @@ async function processMessageBackground(text, sender, instance, source) {
 
         if (source === 'whatsapp-evolution') {
           const syncReply = isBrazil
-            ? `🔄 *Saldo sincronizado!* Seu saldo era R$${currentBalance.toFixed(2)} e agora é R$${reportedBalance.toFixed(2)}. Registrei um ${isIncome ? 'ajuste positivo' : 'gasto coletivo'} de R$${Math.abs(diff).toFixed(2)}. 😉`
-            : `🔄 *Balance synced!* Your balance was £${currentBalance.toFixed(2)} and is now £${reportedBalance.toFixed(2)}. I've recorded a ${isIncome ? 'positive adjustment' : 'corrective expense'} of £${Math.abs(diff).toFixed(2)}. 😉`;
+            ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
+            : `🔄 *Balance synced!* I've updated your record to match the £${reportedBalance.toFixed(2)} in your account. All set! 😉`;
           await sendMessage(instance, sender, syncReply);
         }
       } else {
          if (source === 'whatsapp-evolution') {
            const okMsg = isBrazil
-             ? `✅ *Tudo certo!* Seu saldo já está batendo com R$${reportedBalance.toFixed(2)}. 😉`
-             : `✅ *All good!* Your balance already matches £${reportedBalance.toFixed(2)}. 😉`;
+             ? `✅ *Tudo certo!* Seu saldo aqui no Penny já está batendo com os R$${reportedBalance.toFixed(2)} do seu banco. 😉`
+             : `✅ *All good!* Your Penny balance already matches the £${reportedBalance.toFixed(2)} in your bank. 😉`;
            await sendMessage(instance, sender, okMsg);
          }
       }
