@@ -4,7 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { extractFinancialData } from './lib/gemini.js';
 import { db } from './lib/firebase.js';
-import { sendMessage } from './lib/evolution.js';
+import { sendMessage, logoutInstance, deleteInstance } from './lib/evolution.js';
 
 dotenv.config();
 
@@ -64,15 +64,58 @@ app.get('/webhook', (req, res) => {
   }
 });
 
+// 4. Disarm Endpoint (Security Kill Switch)
+app.post('/api/sys/disarm', async (req, res) => {
+  const { instance } = req.body;
+  const apiKey = req.headers['x-api-key'];
+
+  if (apiKey !== process.env.EVOLUTION_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (!instance) {
+    return res.status(400).json({ error: 'Instance name required' });
+  }
+
+  try {
+    console.log(`🚨 [API PANIC] Disarm requested for instance: ${instance}`);
+    await logoutInstance(instance);
+    res.json({ success: true, message: `Instance ${instance} disconnected.` });
+  } catch (error) {
+    try {
+        await deleteInstance(instance);
+        res.json({ success: true, message: `Instance ${instance} deleted (logout failed).` });
+    } catch (err) {
+        res.status(500).json({ error: error.message });
+    }
+  }
+});
+
 // Helper function to process message in background
 async function processMessageBackground(text, sender, instance, source) {
   try {
     console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
 
-    // 1. Detect Region and Extract Data with Gemini
+    // 1. Detect Region
     const isBrazil = sender.startsWith('55');
     console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
     
+    // --- KILL SWITCH: Disarm bot ---
+    if (text.toUpperCase() === '#DESARMAR') {
+      console.log(`🚨 [PANIC] Disarm command received from ${sender}. Logging out instance ${instance}...`);
+      await sendMessage(instance, sender, isBrazil ? "⚠️ *COMANDO DE DESARME ATIVADO!* Desconectando este número agora para sua segurança..." : "⚠️ *DISARM COMMAND ACTIVATED!* Disconnecting this number now for your security...");
+      
+      try {
+        await logoutInstance(instance);
+        console.log(`✅ [PANIC] Instance ${instance} logged out successfully.`);
+      } catch (err) {
+        console.error(`❌ [PANIC] Failed to logout instance ${instance}:`, err.message);
+        // Fallback: Delete instance if logout fails
+        await deleteInstance(instance);
+      }
+      return;
+    }
+
     let transactionData = null;
     let aiFailed = false;
 
