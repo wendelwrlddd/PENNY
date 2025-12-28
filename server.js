@@ -90,7 +90,57 @@ async function processMessageBackground(text, sender, instance, source) {
       };
     }
     
-    // 2. Save to Firebase
+    // 2. Handle based on Intent
+    const userRef = db.collection('usuarios').doc(sender);
+    
+    // Update last interaction for proactivity tracking
+    await userRef.set({ 
+      lastInteraction: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    if (transactionData.intent === 'PROFILE_UPDATE' && transactionData.profile) {
+      console.log(`[Background] 👤 Updating profile for ${sender}...`);
+      await userRef.set(transactionData.profile, { merge: true });
+      
+      if (source === 'whatsapp-evolution') {
+        const reply = isBrazil 
+          ? `✅ *Perfil atualizado!* Salvei suas informações de renda e pagamento. 😉`
+          : `✅ *Profile updated!* I've saved your income and payment info. 😉`;
+        await sendMessage(instance, sender, reply);
+      }
+      return;
+    }
+
+    if (transactionData.intent === 'REMOVE') {
+      console.log(`[Background] 🗑️ Removing last transaction for ${sender}...`);
+      const amountToRemove = transactionData.amount;
+      
+      const lastTransactions = await userRef.collection('transactions')
+        .orderBy('createdAt', 'desc')
+        .limit(10)
+        .get();
+
+      let deleted = false;
+      for (const doc of lastTransactions.docs) {
+        if (parseFloat(doc.data().amount) === parseFloat(amountToRemove)) {
+          await doc.ref.delete();
+          deleted = true;
+          break;
+        }
+      }
+
+      if (source === 'whatsapp-evolution') {
+        const reply = deleted
+          ? (isBrazil ? `✅ *Feito!* Removi o registro de R$${amountToRemove.toFixed(2)}.` : `✅ *Done!* Removed the £${amountToRemove.toFixed(2)} record.`)
+          : (isBrazil ? `❌ *Ops!* Não encontrei um registro recente de R$${amountToRemove.toFixed(2)}.` : `❌ *Oops!* I couldn't find a recent record of £${amountToRemove.toFixed(2)}.`);
+        await sendMessage(instance, sender, reply);
+      }
+      return;
+    }
+
+    // Default: RECORD (or fallback)
+    console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
     const docData = {
       ...transactionData,
       createdAt: new Date().toISOString(),
@@ -99,69 +149,76 @@ async function processMessageBackground(text, sender, instance, source) {
       instance: instance,
       source: source
     };
-
-    // 2. Save to Firebase (User-Specific Subcollection)
-    console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
-    const docRef = await db.collection('usuarios').doc(sender).collection('transactions').add(docData);
+    const docRef = await userRef.collection('transactions').add(docData);
     console.log(`[Background] ✅ Saved with ID: ${docRef.id}`);
     
-    // 3. Log Raw Message
     await logRawMessage(instance, sender, text);
 
-    // 4. Send Confirmation on WhatsApp (Evolution API)
     if (source === 'whatsapp-evolution') {
       try {
-        // --- Localized Formatting ---
         const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
-        const currencySymbol = isBrazil ? 'R$' : '£';
         const locale = isBrazil ? 'pt-BR' : 'en-GB';
         
         const now = new Date();
         const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
         const monthStr = todayStr.substring(0, 7);
 
-        // Fetch user-specific totals
-        const totalsSnapshot = await db.collection('usuarios').doc(sender).collection('transactions').get();
+        const totalsSnapshot = await userRef.collection('transactions').get();
 
         let totalDia = 0;
         let totalMes = 0;
+        let totalIncome = 0;
+        let totalExpenses = 0;
 
         totalsSnapshot.forEach(doc => {
           const data = doc.data();
-          if (data.type === 'income') return;
+          const amt = parseFloat(data.amount || 0);
+          
+          if (data.type === 'income') {
+            totalIncome += amt;
+          } else {
+            totalExpenses += amt;
+            const created = new Date(data.createdAt || data.date);
+            const createdTodayStr = created.toLocaleDateString('en-CA', { timeZone: tz });
+            const createdMonthStr = createdTodayStr.substring(0, 7);
 
-          const created = new Date(data.createdAt || data.date);
-          const createdTodayStr = created.toLocaleDateString('en-CA', { timeZone: tz });
-          const createdMonthStr = createdTodayStr.substring(0, 7);
-
-          if (createdTodayStr === todayStr) totalDia += parseFloat(data.amount || 0);
-          if (createdMonthStr === monthStr) totalMes += parseFloat(data.amount || 0);
+            if (createdTodayStr === todayStr) totalDia += amt;
+            if (createdMonthStr === monthStr) totalMes += amt;
+          }
         });
 
+        const currentBalance = totalIncome - totalExpenses;
         const formatVal = (val) => val.toLocaleString(locale, { minimumFractionDigits: 2 });
         const dashboardUrl = 'https://penny-finance.vercel.app'; 
         const personalizedLink = `${dashboardUrl}?user=${sender}`;
 
         let replyText = "";
+        const isIncome = transactionData.type === 'income';
+        const category = transactionData.category || (isBrazil ? 'Geral' : 'General');
+        const currency = isBrazil ? 'R$' : '£';
+
         if (isBrazil) {
-          replyText = `💸 *Entendido! Gasto registrado* 😉\n\n` +
-            `🍽️ *${transactionData.category || 'Geral'}*: R$${formatVal(transactionData.amount)}\n\n` +
-            `📊 *Seu resumo:*\n` +
+          replyText = isIncome 
+            ? `💰 *Saldo adicionado!* +R$${formatVal(transactionData.amount)}\n\n`
+            : `💸 *Gasto registrado!* -R$${formatVal(transactionData.amount)} (${category})\n\n`;
+          
+          replyText += `📊 *Resumo:*\n` +
             `• Gasto hoje: R$${formatVal(totalDia)}\n` +
-            `• Gasto este mês: R$${formatVal(totalMes)}\n\n` +
-            `📱 Abra seu painel para ver os detalhes 💙\n` +
+            `• Gasto no mês: R$${formatVal(totalMes)}\n` +
+            `• *Saldo Atual: R$${formatVal(currentBalance)}*\n\n` +
             `🔗 ${personalizedLink}`;
         } else {
-          replyText = `💸 *Got it! I've logged this expense* 😉\n\n` +
-            `🍽️ *${transactionData.category || 'General'}*: £${formatVal(transactionData.amount)}\n\n` +
-            `📊 *Your summary:*\n` +
-            `• Today's spending: £${formatVal(totalDia)}\n` +
-            `• This month's spending: £${formatVal(totalMes)}\n\n` +
-            `📱 Open your dashboard to see the details 💙\n` +
-            `🔗 ${personalizedLink}`;
+          replyText = isIncome 
+            ? `💰 *Balance added!* +£${formatVal(transactionData.amount)}\n\n`
+            : `💸 *Expense logged!* -£${formatVal(transactionData.amount)} (${category})\n\n`;
+          
+          replyText += `📊 *Summary:*\n` +
+              `• Today's spending: £${formatVal(totalDia)}\n` +
+              `• This month's spending: £${formatVal(totalMes)}\n` +
+              `• *Current Balance: £${formatVal(currentBalance)}*\n\n` +
+              `🔗 ${personalizedLink}`;
         }
         
-        console.log(`[Background] 📤 Sending custom reply to ${sender}...`);
         await sendMessage(instance, sender, replyText);
       } catch (replyError) {
         console.error('[Background] ⚠️ Failed to send WhatsApp reply:', replyError.message);
@@ -271,10 +328,63 @@ app.post('/webhook', (req, res) => {
   console.log('========================================');
 });
 
+// --- Proactive AI Messaging Loop ---
+async function checkProactiveMessages() {
+  console.log('🕒 [Proactive] Running 30min check...');
+  try {
+    const now = new Date();
+    const thirtyMinsAgo = new Date(now.getTime() - 30 * 60000);
+    
+    // Find users active in last 24h to avoid spamming old users
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60000).toISOString();
+    const usersSnapshot = await db.collection('usuarios')
+      .where('lastInteraction', '>', twentyFourHoursAgo)
+      .get();
+
+    for (const doc of usersSnapshot.docs) {
+      const userData = doc.data();
+      const userId = doc.id;
+      const lastPrompt = userData.lastProactivePrompt ? new Date(userData.lastProactivePrompt) : new Date(0);
+
+      // Only prompt if last prompt was > 30 mins ago
+      if (lastPrompt < thirtyMinsAgo) {
+        const isBrazil = userId.startsWith('55');
+        const instance = userData.instance || 'OfficialMeta'; // Fallback instance
+        
+        let message = "";
+        
+        if (!userData.monthlyIncome) {
+          message = isBrazil 
+            ? "Oi! Notei que ainda não sei qual sua renda mensal ou salário. Quanto você costuma receber para eu organizar seu saldo? 💰"
+            : "Hi! I noticed I don't know your monthly income yet. How much do you usually receive so I can track your balance? 💰";
+        } else if (userData.isSalaried && !userData.payDay) {
+          message = isBrazil
+            ? "Vi que você é assalariado! Que dia do mês você costuma receber seu salário? 📅"
+            : "I see you're salaried! What day of the month do you usually receive your salary? 📅";
+        }
+
+        if (message) {
+          console.log(`🕒 [Proactive] Sending prompt to ${userId}`);
+          await sendMessage(instance, userId, message);
+          await doc.ref.update({ lastProactivePrompt: now.toISOString() });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ [Proactive] Error:', error.message);
+  }
+}
+
+// Start the loop every 30 minutes
+setInterval(checkProactiveMessages, 30 * 60000);
+
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
   console.log(`- GEMINI_API_KEY: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  
+  // Initial run in 10 seconds to not block startup
+  setTimeout(checkProactiveMessages, 10000);
 });

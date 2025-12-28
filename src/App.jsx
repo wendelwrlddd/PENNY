@@ -48,9 +48,9 @@ const translations = {
     learnMore: "Learn more",
     dashboard: "Dashboard",
     welcome: "Welcome back",
-    totalSpent: "Total spent to date.",
+    totalSpent: "Balance",
     activityStats: "Activity Statistics",
-    spendingGoal: "Spending Goal",
+    spendingGoal: "Expenses",
     recentTransactions: "Recent Transactions",
     seeAll: "See All",
     noTransactions: "No transactions recorded yet.",
@@ -86,9 +86,9 @@ const translations = {
     learnMore: "Saiba mais",
     dashboard: "Painel",
     welcome: "Bem-vindo de volta",
-    totalSpent: "Total gasto até agora.",
+    totalSpent: "Saldo",
     activityStats: "Estatísticas de Atividade",
-    spendingGoal: "Meta de Gastos",
+    spendingGoal: "Gastos",
     recentTransactions: "Transações Recentes",
     seeAll: "Ver Tudo",
     noTransactions: "Nenhuma transação registrada ainda.",
@@ -453,7 +453,7 @@ function App() {
                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-110 transition-transform duration-700"></div>
                    <div className="relative z-10 flex flex-col justify-center min-h-[160px]">
                       <p className="text-sm font-medium opacity-90 mb-1">{t.totalSpent}</p>
-                      <h3 className="text-6xl font-black tracking-tighter">{formatCurrency(totalExpenses)}</h3>
+                      <h3 className="text-6xl font-black tracking-tighter">{formatCurrency(balance)}</h3>
                    </div>
                 </div>
 
