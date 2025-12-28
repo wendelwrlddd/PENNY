@@ -108,6 +108,73 @@ async function processMessageBackground(text, sender, instance, source) {
           ? `✅ *Perfil atualizado!* Salvei suas informações de renda e pagamento. 😉`
           : `✅ *Profile updated!* I've saved your income and payment info. 😉`;
         await sendMessage(instance, sender, reply);
+
+        // Se o usuário acabou de informar o salário mas não a data, avisar que logo perguntaremos
+        const profile = transactionData.profile;
+        if (profile.monthlyIncome && !profile.payDay) {
+           const waitMsg = isBrazil 
+            ? `Dica: Notei que você não informou o dia do pagamento. Em breve te perguntarei sobre isso para organizar melhor! 📅`
+            : `Tip: I noticed you didn't mention your payday. I'll ask you about that soon to help organize better! 📅`;
+           await sendMessage(instance, sender, waitMsg);
+        }
+      }
+      return;
+    }
+
+    if (transactionData.intent === 'SYNC') {
+      console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
+      const amountRemaining = transactionData.amount;
+      const userSnap = await userRef.get();
+      const userData = userSnap.data() || {};
+      const monthlyIncome = userData.monthlyIncome || 0;
+
+      if (monthlyIncome > 0) {
+        const alreadySpent = monthlyIncome - amountRemaining;
+        if (alreadySpent > 0) {
+          // Adicionar o salário como renda fixa se não houver renda esse mês
+          // Mas para simplificar a lógica do usuário, vamos adicionar a renda e o gasto corretivo
+          
+          // 1. Adicionar Renda (Salário)
+          await userRef.collection('transactions').add({
+            amount: monthlyIncome,
+            type: 'income',
+            category: isBrazil ? 'Salário' : 'Salary',
+            description: isBrazil ? 'Sincronização de Renda' : 'Income Sync',
+            createdAt: new Date().toISOString(),
+            intent: 'RECORD'
+          });
+
+          // 2. Adicionar Gasto Corretivo (O que ele já gastou)
+          await userRef.collection('transactions').add({
+            amount: alreadySpent,
+            type: 'expense',
+            category: isBrazil ? 'Ajuste' : 'Adjustment',
+            description: isBrazil ? 'Gastos acumulados antes do Penny' : 'Previous spending before Penny',
+            createdAt: new Date().toISOString(),
+            intent: 'RECORD'
+          });
+
+          if (source === 'whatsapp-evolution') {
+            const syncReply = isBrazil
+              ? `🔄 *Sincronizado!* Como você tem R$${amountRemaining.toFixed(2)} e seu salário é R$${monthlyIncome.toFixed(2)}, registrei um gasto de R$${alreadySpent.toFixed(2)} para bater as contas. 😉`
+              : `🔄 *Synced!* Since you have £${amountRemaining.toFixed(2)} left and your salary is £${monthlyIncome.toFixed(2)}, I've recorded £${alreadySpent.toFixed(2)} in previous expenses to match your balance. 😉`;
+            await sendMessage(instance, sender, syncReply);
+          }
+        } else {
+           if (source === 'whatsapp-evolution') {
+             const noActionMsg = isBrazil
+               ? `Saldo atualizado! Você tem R$${amountRemaining.toFixed(2)} disponíveis.`
+               : `Balance updated! You have £${amountRemaining.toFixed(2)} available.`;
+             await sendMessage(instance, sender, noActionMsg);
+           }
+        }
+      } else {
+         if (source === 'whatsapp-evolution') {
+           const incomeMissingMsg = isBrazil
+             ? `Entendi que você tem R$${amountRemaining.toFixed(2)}, mas ainda não sei seu salário para calcular quanto você já gastou. Pode me falar quanto você ganha?`
+             : `I understand you have £${amountRemaining.toFixed(2)}, but I don't know your salary yet to calculate your spending. Can you tell me your income?`;
+           await sendMessage(instance, sender, incomeMissingMsg);
+         }
       }
       return;
     }
