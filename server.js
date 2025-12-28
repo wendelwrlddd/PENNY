@@ -123,8 +123,8 @@ async function processMessageBackground(text, sender, instance, source) {
 
       let deleted = false;
       for (const doc of lastTransactions.docs) {
-        if (parseFloat(doc.data().amount) === parseFloat(amountToRemove)) {
-          await doc.ref.delete();
+        if (parseFloat(doc.data().amount) === parseFloat(amountToRemove) && doc.data().type !== 'error') {
+          await doc.ref.update({ type: 'error' });
           deleted = true;
           break;
         }
@@ -173,6 +173,8 @@ async function processMessageBackground(text, sender, instance, source) {
         totalsSnapshot.forEach(doc => {
           const data = doc.data();
           const amt = parseFloat(data.amount || 0);
+          
+          if (data.type === 'error') return;
           
           if (data.type === 'income') {
             totalIncome += amt;

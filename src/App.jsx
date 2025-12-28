@@ -194,7 +194,7 @@ function App() {
 
   // 1. Totais
   const totalExpenses = transactions
-    .filter((t) => t.type !== 'income') // Tudo que não é explicitamente 'income' entra como gasto
+    .filter((t) => t.type !== 'income' && t.type !== 'error') 
     .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
 
   const totalIncome = transactions
@@ -208,7 +208,7 @@ function App() {
 
   // 3. Agrupamento por Categorias Dinâmico
   const categoriesMap = transactions
-    .filter(t => t.type === 'expense' || !t.type)
+    .filter(t => (t.type === 'expense' || !t.type) && t.type !== 'error')
     .reduce((acc, t) => {
       const cat = t.category || 'Outros';
       acc[cat] = (acc[cat] || 0) + parseFloat(t.amount || 0);
@@ -230,7 +230,7 @@ function App() {
     const totalAmount = transactions
       .filter((t) => {
         const date = parseSafeDate(t.date) || parseSafeDate(t.createdAt);
-        return date && date.getDay() === index && (t.type === 'expense' || !t.type);
+        return date && date.getDay() === index && (t.type === 'expense' || !t.type) && t.type !== 'error';
       })
       .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
     
@@ -532,24 +532,31 @@ function App() {
                     <p className="text-center text-gray-600 py-12 italic">{t.noTransactions}</p>
                  ) : (
                     <div className="space-y-4">
-                       {transactions.map((t) => (
-                         <div key={t.id} className="group flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all">
-                            <div className="flex items-center gap-4">
-                               <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110 ${t.type === 'income' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                  {t.type === 'income' ? '↑' : '↓'}
-                               </div>
-                               <div>
-                                  <p className="text-sm font-bold">{t.description || (isBrazil ? "Transação" : "Transaction")}</p>
-                                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(t.date, t.createdAt)} • {t.category || (isBrazil ? "Geral" : "General")}</p>
-                               </div>
-                            </div>
-                            <div className="text-right">
-                               <p className={`font-black text-lg ${t.type === 'income' ? 'text-green-500' : 'text-red-500'}`}>
-                                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                               </p>
-                            </div>
-                         </div>
-                       ))}
+                       {transactions.map((t) => {
+                         const isError = t.type === 'error';
+                         const isIncome = t.type === 'income';
+                         
+                         return (
+                           <div key={t.id} className={`group flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all ${isError ? 'opacity-40 grayscale' : ''}`}>
+                              <div className="flex items-center gap-4">
+                                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110 ${isError ? 'bg-gray-500/10 text-gray-400' : isIncome ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                    {isError ? '✕' : isIncome ? '↑' : '↓'}
+                                 </div>
+                                 <div>
+                                    <p className={`text-sm font-bold ${isError ? 'line-through' : ''}`}>
+                                      {isError ? (isBrazil ? "Erro Corrigido" : "Corrected Error") : (t.description || (isBrazil ? "Transação" : "Transaction"))}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(t.date, t.createdAt)} • {isError ? (isBrazil ? "Cancelado" : "Cancelled") : (t.category || (isBrazil ? "Geral" : "General"))}</p>
+                                 </div>
+                              </div>
+                              <div className="text-right">
+                                 <p className={`font-black text-lg ${isError ? 'text-gray-500 line-through' : isIncome ? 'text-green-500' : 'text-red-500'}`}>
+                                    {isError ? '' : isIncome ? '+' : '-'}{formatCurrency(t.amount)}
+                                 </p>
+                              </div>
+                           </div>
+                         );
+                       })}
                     </div>
                  )}
               </div>
