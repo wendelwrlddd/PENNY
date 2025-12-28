@@ -73,16 +73,30 @@ async function processMessageBackground(text, sender, instance, source) {
     const isBrazil = sender.startsWith('55');
     console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
     
-    let transactionData;
+    let transactionData = null;
     let aiFailed = false;
-    try {
-      transactionData = await extractFinancialData(text, isBrazil);
-    } catch (aiError) {
-      console.error('[Background] ⚠️ Gemini failed:', aiError.message);
-      aiFailed = true;
+
+    // --- STRATEGY: Regex Fallback for SYNC (Bulletproof) ---
+    const syncRegex = /(atualize|ajuste|saldo|balance|tenho|resta|only|so|só).*?(\d+([.,]\d+)?)/i;
+    const match = text.match(syncRegex);
+    
+    if (match && (text.toLowerCase().includes('saldo') || text.toLowerCase().includes('balance') || text.toLowerCase().includes('tenho') || text.toLowerCase().includes('atualize'))) {
+      const amountStr = match[2].replace(',', '.');
+      transactionData = {
+        intent: 'SYNC',
+        amount: parseFloat(amountStr)
+      };
+      console.log(`[Background] 🎯 Regex Matched SYNC: ${transactionData.amount}`);
+    } else {
+      try {
+        transactionData = await extractFinancialData(text, isBrazil);
+      } catch (aiError) {
+        console.error('[Background] ⚠️ Gemini failed:', aiError.message);
+        aiFailed = true;
+      }
     }
 
-    if (aiFailed) {
+    if (aiFailed || !transactionData) {
       if (source === 'whatsapp-evolution') {
         const doubtMsg = isBrazil 
           ? `🤔 *Fiquei em dúvida!* Não consegui entender muito bem essa mensagem. Pode repetir de uma forma mais clara?`
