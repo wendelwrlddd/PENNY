@@ -125,57 +125,35 @@ async function processMessageBackground(text, sender, instance, source) {
 
     if (transactionData.intent === 'SYNC') {
       console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
-      const amountRemaining = transactionData.amount;
-      const userSnap = await userRef.get();
-      const userData = userSnap.data() || {};
-      const monthlyIncome = userData.monthlyIncome || 0;
+      const reportedBalance = parseFloat(transactionData.amount);
+      const { currentBalance } = await calculateUserTotals(userRef);
+      
+      const diff = reportedBalance - currentBalance;
 
-      if (monthlyIncome > 0) {
-        const alreadySpent = monthlyIncome - amountRemaining;
-        if (alreadySpent > 0) {
-          // Adicionar o salário como renda fixa se não houver renda esse mês
-          // Mas para simplificar a lógica do usuário, vamos adicionar a renda e o gasto corretivo
-          
-          // 1. Adicionar Renda (Salário)
-          await userRef.collection('transactions').add({
-            amount: monthlyIncome,
-            type: 'income',
-            category: isBrazil ? 'Salário' : 'Salary',
-            description: isBrazil ? 'Sincronização de Renda' : 'Income Sync',
-            createdAt: new Date().toISOString(),
-            intent: 'RECORD'
-          });
+      if (Math.abs(diff) > 0.01) {
+        // Record adjustment
+        const isIncome = diff > 0;
+        await userRef.collection('transactions').add({
+          amount: Math.abs(diff),
+          type: isIncome ? 'income' : 'expense',
+          category: isBrazil ? 'Ajuste' : 'Adjustment',
+          description: isBrazil ? 'Ajuste de Saldo (Sincronização)' : 'Balance Adjustment (Sync)',
+          createdAt: new Date().toISOString(),
+          intent: 'RECORD'
+        });
 
-          // 2. Adicionar Gasto Corretivo (O que ele já gastou)
-          await userRef.collection('transactions').add({
-            amount: alreadySpent,
-            type: 'expense',
-            category: isBrazil ? 'Ajuste' : 'Adjustment',
-            description: isBrazil ? 'Gastos acumulados antes do Penny' : 'Previous spending before Penny',
-            createdAt: new Date().toISOString(),
-            intent: 'RECORD'
-          });
-
-          if (source === 'whatsapp-evolution') {
-            const syncReply = isBrazil
-              ? `🔄 *Sincronizado!* Como você tem R$${amountRemaining.toFixed(2)} e seu salário é R$${monthlyIncome.toFixed(2)}, registrei um gasto de R$${alreadySpent.toFixed(2)} para bater as contas. 😉`
-              : `🔄 *Synced!* Since you have £${amountRemaining.toFixed(2)} left and your salary is £${monthlyIncome.toFixed(2)}, I've recorded £${alreadySpent.toFixed(2)} in previous expenses to match your balance. 😉`;
-            await sendMessage(instance, sender, syncReply);
-          }
-        } else {
-           if (source === 'whatsapp-evolution') {
-             const noActionMsg = isBrazil
-               ? `Saldo atualizado! Você tem R$${amountRemaining.toFixed(2)} disponíveis.`
-               : `Balance updated! You have £${amountRemaining.toFixed(2)} available.`;
-             await sendMessage(instance, sender, noActionMsg);
-           }
+        if (source === 'whatsapp-evolution') {
+          const syncReply = isBrazil
+            ? `🔄 *Saldo sincronizado!* Seu saldo era R$${currentBalance.toFixed(2)} e agora é R$${reportedBalance.toFixed(2)}. Registrei um ${isIncome ? 'ajuste positivo' : 'gasto coletivo'} de R$${Math.abs(diff).toFixed(2)}. 😉`
+            : `🔄 *Balance synced!* Your balance was £${currentBalance.toFixed(2)} and is now £${reportedBalance.toFixed(2)}. I've recorded a ${isIncome ? 'positive adjustment' : 'corrective expense'} of £${Math.abs(diff).toFixed(2)}. 😉`;
+          await sendMessage(instance, sender, syncReply);
         }
       } else {
          if (source === 'whatsapp-evolution') {
-           const incomeMissingMsg = isBrazil
-             ? `Entendi que você tem R$${amountRemaining.toFixed(2)}, mas ainda não sei seu salário para calcular quanto você já gastou. Pode me falar quanto você ganha?`
-             : `I understand you have £${amountRemaining.toFixed(2)}, but I don't know your salary yet to calculate your spending. Can you tell me your income?`;
-           await sendMessage(instance, sender, incomeMissingMsg);
+           const okMsg = isBrazil
+             ? `✅ *Tudo certo!* Seu saldo já está batendo com R$${reportedBalance.toFixed(2)}. 😉`
+             : `✅ *All good!* Your balance already matches £${reportedBalance.toFixed(2)}. 😉`;
+           await sendMessage(instance, sender, okMsg);
          }
       }
       return;
@@ -245,48 +223,14 @@ async function processMessageBackground(text, sender, instance, source) {
 
     if (source === 'whatsapp-evolution') {
       try {
-        const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
-        const locale = isBrazil ? 'pt-BR' : 'en-GB';
-        
-        const now = new Date();
-        const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
-        const monthStr = todayStr.substring(0, 7);
-
-        const totalsSnapshot = await userRef.collection('transactions').get();
-
-        let totalDia = 0;
-        let totalMes = 0;
-        let totalIncome = 0;
-        let totalExpenses = 0;
-
-        totalsSnapshot.forEach(doc => {
-          const data = doc.data();
-          const amt = parseFloat(data.amount || 0);
-          
-          if (data.type === 'error') return;
-          
-          if (data.type === 'income') {
-            totalIncome += amt;
-          } else {
-            totalExpenses += amt;
-            const created = new Date(data.createdAt || data.date);
-            const createdTodayStr = created.toLocaleDateString('en-CA', { timeZone: tz });
-            const createdMonthStr = createdTodayStr.substring(0, 7);
-
-            if (createdTodayStr === todayStr) totalDia += amt;
-            if (createdMonthStr === monthStr) totalMes += amt;
-          }
-        });
-
-        const currentBalance = totalIncome - totalExpenses;
-        const formatVal = (val) => val.toLocaleString(locale, { minimumFractionDigits: 2 });
+        const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
+        const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
         const dashboardUrl = 'https://penny-finance.vercel.app'; 
         const personalizedLink = `${dashboardUrl}?user=${sender}`;
 
         let replyText = "";
         const isIncome = transactionData.type === 'income';
         const category = transactionData.category || (isBrazil ? 'Geral' : 'General');
-        const currency = isBrazil ? 'R$' : '£';
 
         if (isBrazil) {
           replyText = isIncome 
@@ -319,6 +263,50 @@ async function processMessageBackground(text, sender, instance, source) {
   } catch (error) {
     console.error('[Background] ❌ Error processing message:', error);
   }
+}
+
+/**
+ * Helper to calculate user totals for messages
+ */
+async function calculateUserTotals(userRef, isBrazil) {
+  const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
+  const monthStr = todayStr.substring(0, 7);
+
+  const totalsSnapshot = await userRef.collection('transactions').get();
+
+  let totalDia = 0;
+  let totalMes = 0;
+  let totalIncome = 0;
+  let totalExpenses = 0;
+
+  totalsSnapshot.forEach(doc => {
+    const data = doc.data();
+    const amt = parseFloat(data.amount || 0);
+    
+    if (data.type === 'error') return;
+    
+    if (data.type === 'income') {
+      totalIncome += amt;
+    } else {
+      totalExpenses += amt;
+      const created = new Date(data.createdAt || data.date);
+      const createdTodayStr = created.toLocaleDateString('en-CA', { timeZone: tz });
+      const createdMonthStr = createdTodayStr.substring(0, 7);
+
+      if (createdTodayStr === todayStr) totalDia += amt;
+      if (createdMonthStr === monthStr) totalMes += amt;
+    }
+  });
+
+  return {
+    totalDia,
+    totalMes,
+    totalIncome,
+    totalExpenses,
+    currentBalance: totalIncome - totalExpenses
+  };
 }
 
 async function logRawMessage(instance, sender, text) {
