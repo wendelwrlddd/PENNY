@@ -63,7 +63,8 @@ const translations = {
       Transport: 'Transport',
       Shopping: 'Shopping',
       Leisure: 'Leisure',
-      General: 'General'
+      General: 'General',
+      Bills: 'Bills'
     }
   },
   pt: {
@@ -101,7 +102,8 @@ const translations = {
       Transport: 'Transporte',
       Shopping: 'Compras',
       Leisure: 'Lazer',
-      General: 'Geral'
+      General: 'Geral',
+      Bills: 'Contas'
     }
   }
 };
@@ -208,10 +210,17 @@ function App() {
 
   // 3. Agrupamento por Categorias Dinâmico
   const categoriesMap = transactions
-    .filter(t => (t.type === 'expense' || !t.type) && t.type !== 'error')
-    .reduce((acc, t) => {
-      const cat = t.category || 'Outros';
-      acc[cat] = (acc[cat] || 0) + parseFloat(t.amount || 0);
+    .filter(tx => (tx.type === 'expense' || !tx.type) && tx.type !== 'error')
+    .reduce((acc, tx) => {
+      // Map DB category (usually English) to the translation key
+      let catKey = tx.category || 'General';
+      // Normalize to match translations keys
+      const foundKey = Object.keys(t.categories).find(
+        key => key.toLowerCase() === catKey.toLowerCase()
+      ) || 'General';
+      
+      const translatedName = t.categories[foundKey] || foundKey;
+      acc[translatedName] = (acc[translatedName] || 0) + parseFloat(tx.amount || 0);
       return acc;
     }, {});
 
@@ -220,7 +229,8 @@ function App() {
     { name: t.categories.Food, color: 'bg-orange-500' },
     { name: t.categories.Transport, color: 'bg-blue-500' },
     { name: t.categories.Shopping, color: 'bg-pink-500' },
-    { name: t.categories.Leisure, color: 'bg-purple-500' }
+    { name: t.categories.Leisure, color: 'bg-purple-500' },
+    { name: t.categories.Bills, color: 'bg-red-500' }
   ];
 
   // 4. Atividade Semanal (Volume de transações por dia)
@@ -532,26 +542,26 @@ function App() {
                     <p className="text-center text-gray-600 py-12 italic">{t.noTransactions}</p>
                  ) : (
                     <div className="space-y-4">
-                       {transactions.map((t) => {
-                         const isError = t.type === 'error';
-                         const isIncome = t.type === 'income';
+                       {transactions.map((tx) => {
+                         const isError = tx.type === 'error';
+                         const isIncome = tx.type === 'income';
                          
                          return (
-                           <div key={t.id} className={`group flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all ${isError ? 'opacity-40 grayscale' : ''}`}>
+                           <div key={tx.id} className={`group flex items-center justify-between p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all ${isError ? 'opacity-40 grayscale' : ''}`}>
                               <div className="flex items-center gap-4">
                                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110 ${isError ? 'bg-gray-500/10 text-gray-400' : isIncome ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                                     {isError ? '✕' : isIncome ? '↑' : '↓'}
                                  </div>
                                  <div>
                                     <p className={`text-sm font-bold ${isError ? 'line-through' : ''}`}>
-                                      {isError ? (isBrazil ? "Erro Corrigido" : "Corrected Error") : (t.description || (isBrazil ? "Transação" : "Transaction"))}
+                                      {isError ? (isBrazil ? "Erro Corrigido" : "Corrected Error") : (tx.description || (isBrazil ? "Transação" : "Transaction"))}
                                     </p>
-                                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(t.date, t.createdAt)} • {isError ? (isBrazil ? "Cancelado" : "Cancelled") : (t.category || (isBrazil ? "Geral" : "General"))}</p>
+                                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{formatDate(tx.date, tx.createdAt)} • {isError ? (isBrazil ? "Cancelado" : "Cancelled") : (tx.category || (isBrazil ? "Geral" : "General"))}</p>
                                  </div>
                               </div>
                               <div className="text-right">
                                  <p className={`font-black text-lg ${isError ? 'text-gray-500 line-through' : isIncome ? 'text-green-500' : 'text-red-500'}`}>
-                                    {isError ? '' : isIncome ? '+' : '-'}{formatCurrency(t.amount)}
+                                    {isError ? '' : isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
                                  </p>
                               </div>
                            </div>
