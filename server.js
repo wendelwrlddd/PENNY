@@ -126,35 +126,58 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'SYNC') {
       console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
       const reportedBalance = parseFloat(transactionData.amount);
-      const { currentBalance } = await calculateUserTotals(userRef, isBrazil);
       
-      const diff = reportedBalance - currentBalance;
-
-      if (Math.abs(diff) > 0.01) {
-        // Record adjustment
-        const isIncome = diff > 0;
+      // Get current state
+      const userSnap = await userRef.get();
+      const userData = userSnap.data() || {};
+      const { totalIncome, currentBalance } = await calculateUserTotals(userRef, isBrazil);
+      
+      // If no income recorded this month, add the monthlyIncome from profile first
+      if (totalIncome === 0 && userData.monthlyIncome > 0) {
+        console.log(`[Background] 💰 Adding monthly income (R$${userData.monthlyIncome}) before sync.`);
         await userRef.collection('transactions').add({
-          amount: Math.abs(diff),
-          type: isIncome ? 'income' : 'expense',
-          category: isBrazil ? 'Ajuste' : 'Adjustment',
-          description: isBrazil ? 'Ajuste de Saldo (Sincronização)' : 'Balance Adjustment (Sync)',
+          amount: userData.monthlyIncome,
+          type: 'income',
+          category: isBrazil ? 'Salário' : 'Salary',
+          description: isBrazil ? 'Renda Mensal' : 'Monthly Income',
           createdAt: new Date().toISOString(),
           intent: 'RECORD'
         });
-
-        if (source === 'whatsapp-evolution') {
-          const syncReply = isBrazil
-            ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
-            : `🔄 *Balance synced!* I've updated your record to match the £${reportedBalance.toFixed(2)} in your account. All set! 😉`;
-          await sendMessage(instance, sender, syncReply);
+        
+        // Refresh totals after adding income
+        const refreshed = await calculateUserTotals(userRef, isBrazil);
+        const diff = reportedBalance - refreshed.currentBalance;
+        
+        if (Math.abs(diff) > 0.01) {
+          await userRef.collection('transactions').add({
+            amount: Math.abs(diff),
+            type: diff > 0 ? 'income' : 'expense',
+            category: isBrazil ? 'Ajuste' : 'Adjustment',
+            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
+            createdAt: new Date().toISOString(),
+            intent: 'RECORD'
+          });
         }
       } else {
-         if (source === 'whatsapp-evolution') {
-           const okMsg = isBrazil
-             ? `✅ *Tudo certo!* Seu saldo aqui no Penny já está batendo com os R$${reportedBalance.toFixed(2)} do seu banco. 😉`
-             : `✅ *All good!* Your Penny balance already matches the £${reportedBalance.toFixed(2)} in your bank. 😉`;
-           await sendMessage(instance, sender, okMsg);
-         }
+        // Just standard differential sync
+        const diff = reportedBalance - currentBalance;
+        if (Math.abs(diff) > 0.01) {
+          await userRef.collection('transactions').add({
+            amount: Math.abs(diff),
+            type: diff > 0 ? 'income' : 'expense',
+            category: isBrazil ? 'Ajuste' : 'Adjustment',
+            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
+            createdAt: new Date().toISOString(),
+            intent: 'RECORD'
+          });
+        }
+      }
+
+      if (source === 'whatsapp-evolution') {
+        const syncReply = isBrazil
+          ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
+          : `🔄 *Balance synced!* I've updated your record to match the £${reportedBalance.toFixed(2)} in your account. All set! 😉`;
+        await sendMessage(instance, sender, syncReply);
       }
       return;
     }
