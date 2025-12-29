@@ -157,7 +157,7 @@ async function processMessageBackground(text, sender, instance, source) {
       currentBalance: currentBalance,
       lastAction: userData.lastAction || 'none',
       onboarding_step: onboarding_step,
-      dashboard_link: `https://penny-assistant.vercel.app/dashboard/${sender}`
+      dashboard_link: `https://penny-assistant.vercel.app/?user=${sender}`
     };
 
     let transactionData = null;
@@ -203,10 +203,10 @@ async function processMessageBackground(text, sender, instance, source) {
 
     if (transactionData.intent === 'SET_MONTHLY_INCOME') {
       const income = parseFloat(transactionData.monthly_income);
-      console.log(`[Background] 💰 Setting income: ${income}`);
+      console.log(`[Background] 💰 Setting monthly income: ${income}`);
       await userRef.update({ monthlyIncome: income });
       
-      // Record income transaction
+      // Also record as a transaction to update balance
       await userRef.collection('transactions').add({
         amount: income,
         type: 'income',
