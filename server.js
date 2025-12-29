@@ -15,8 +15,8 @@ const PORT = process.env.PORT || 8080;
 
 // Update this list with authorized phone numbers (only digits)
 const ALLOWED_NUMBERS = [
+  '557391082831', // User Primary Number
   '554498035109', // Authorized 2024-12-29
-  // Add other numbers here
 ];
 
 app.use(cors());
@@ -622,8 +622,10 @@ app.post('/webhook', (req, res) => {
       console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
 
       if (text && sender) {
-        // 🔒 Filtro de Segurança: Apenas o número do usuário
-        if (sender === '557391082831' || sender === '73991082831') {
+        // 🔒 Filtro de Segurança: Apenas números autorizados
+        const isAllowed = ALLOWED_NUMBERS.some(num => sender.includes(num));
+        
+        if (isAllowed) {
           processMessageBackground(text, sender, instance, 'whatsapp-evolution');
         } else {
           console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
