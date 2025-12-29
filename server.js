@@ -601,6 +601,49 @@ async function checkProactiveMessages() {
 // Start the loop every 30 minutes
 setInterval(checkProactiveMessages, 30 * 60000);
 
+// --- Scheduled Daily Night Report (00:00) ---
+cron.schedule('0 0 * * *', async () => {
+  console.log('🕒 [Cron] Running daily night report (00:00)...');
+  try {
+    const now = new Date();
+    // Use last 24h as activity filter
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60000).toISOString();
+    const usersSnapshot = await db.collection('usuarios')
+      .where('lastInteraction', '>', twentyFourHoursAgo)
+      .get();
+
+    for (const doc of usersSnapshot.docs) {
+      const userData = doc.data();
+      const sender = doc.id;
+      const isBrazil = sender.startsWith('55');
+      const instance = userData.instance || 'penny-instance';
+
+      const { totalDia, totalMes, currentBalance } = await calculateUserTotals(doc.ref, isBrazil);
+      const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
+      
+      let reportMsg = "";
+      if (isBrazil) {
+        reportMsg = `🌙 *Resumo do Dia - Penny*\n\n` +
+          `Hoje você gastou: *R$${formatVal(totalDia)}*\n` +
+          `Total no mês: R$${formatVal(totalMes)}\n` +
+          `Saldo atual: *R$${formatVal(currentBalance)}*\n\n` +
+          `Tenha uma ótima noite! Amanhã estarei aqui para registrar seus novos gastos. 😴`;
+      } else {
+        reportMsg = `🌙 *Daily Summary - Penny*\n\n` +
+          `Today's spending: *£${formatVal(totalDia)}*\n` +
+          `Total this month: £${formatVal(totalMes)}\n` +
+          `Current balance: *£${formatVal(currentBalance)}*\n\n` +
+          `Have a great night! I'll be here tomorrow to track your new expenses. 😴`;
+      }
+
+      await sendMessage(instance, sender, reportMsg);
+      console.log(`[Cron] Sent report to ${sender}`);
+    }
+  } catch (err) {
+    console.error('[Cron] ❌ Daily report failed:', err.message);
+  }
+});
+
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
