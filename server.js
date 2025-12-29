@@ -250,6 +250,21 @@ async function processMessageBackground(text, sender, instance, source) {
       if (transactionData.payday) await userRef.update({ payDay: transactionData.payday });
     }
 
+    if (transactionData.intent === 'RESET') {
+      console.log(`[Background] 🗑️ Resetting profile for ${sender}...`);
+      await userRef.update({
+        monthlyIncome: admin.firestore.FieldValue.delete(),
+        payDay: admin.firestore.FieldValue.delete(),
+        lastProactivePrompt: admin.firestore.FieldValue.delete(),
+        lastAction: admin.firestore.FieldValue.delete()
+      });
+      
+      const txs = await userRef.collection('transactions').get();
+      const batch = db.batch();
+      txs.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+    }
+
     // --- RESPOND ---
     if (source === 'whatsapp-evolution' && transactionData.response_message) {
       // Re-calculate totals for the final message if needed, or use AI message
