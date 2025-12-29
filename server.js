@@ -169,7 +169,19 @@ async function processMessageBackground(text, sender, instance, source) {
       console.log(`[Background] 👤 Updating profile for ${sender}...`);
       
       const updates = {};
-      if (transactionData.amount) updates.monthlyIncome = parseFloat(transactionData.amount);
+      if (transactionData.amount) {
+        updates.monthlyIncome = parseFloat(transactionData.amount);
+        // --- NEW: Record income transaction immediately ---
+        console.log(`[Background] 💰 Recording initial income transaction: R$${updates.monthlyIncome}`);
+        await userRef.collection('transactions').add({
+          amount: updates.monthlyIncome,
+          type: 'income',
+          category: 'General',
+          description: isBrazil ? 'Renda Mensal (Onboarding)' : 'Monthly Income (Onboarding)',
+          createdAt: new Date().toISOString(),
+          intent: 'RECORD'
+        });
+      }
       if (transactionData.payDay) updates.payDay = parseInt(transactionData.payDay);
 
       await userRef.set(updates, { merge: true });
@@ -219,49 +231,32 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'SYNC') {
       console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
       const reportedBalance = parseFloat(transactionData.amount);
-      const { totalIncome, currentBalance: oldBalance } = await calculateUserTotals(userRef, isBrazil);
+      const { currentBalance: oldBalance } = await calculateUserTotals(userRef, isBrazil);
       
       let initialSpending = 0;
       let isInitialSync = false;
 
-      if (totalIncome === 0 && (userData.monthlyIncome || 0) > 0) {
+      // Detect if this is the onboarding sync (no adjustment recorded yet)
+      const adjSnapshot = await userRef.collection('transactions')
+        .where('description', 'in', ['Ajuste Inicial', 'Initial Adjustment'])
+        .limit(1)
+        .get();
+      
+      if (adjSnapshot.empty && (userData.monthlyIncome || 0) > 0) {
         isInitialSync = true;
-        console.log(`[Background] 💰 Adding monthly income (R$${userData.monthlyIncome}) before sync.`);
+      }
+
+      const diff = reportedBalance - oldBalance;
+      if (Math.abs(diff) > 0.01) {
+        initialSpending = Math.abs(diff);
         await userRef.collection('transactions').add({
-          amount: userData.monthlyIncome,
-          type: 'income',
+          amount: Math.abs(diff),
+          type: diff > 0 ? 'income' : 'expense',
           category: 'General',
-          description: isBrazil ? 'Renda Mensal (Onboarding)' : 'Monthly Income (Onboarding)',
+          description: isBrazil ? 'Ajuste Inicial' : 'Initial Adjustment',
           createdAt: new Date().toISOString(),
           intent: 'RECORD'
         });
-        
-        const refreshed = await calculateUserTotals(userRef, isBrazil);
-        const diff = reportedBalance - refreshed.currentBalance;
-        
-        if (Math.abs(diff) > 0.01) {
-          initialSpending = Math.abs(diff);
-          await userRef.collection('transactions').add({
-            amount: initialSpending,
-            type: diff > 0 ? 'income' : 'expense',
-            category: 'General',
-            description: isBrazil ? 'Ajuste Inicial' : 'Initial Adjustment',
-            createdAt: new Date().toISOString(),
-            intent: 'RECORD'
-          });
-        }
-      } else {
-        const diff = reportedBalance - oldBalance;
-        if (Math.abs(diff) > 0.01) {
-          await userRef.collection('transactions').add({
-            amount: Math.abs(diff),
-            type: diff > 0 ? 'income' : 'expense',
-            category: 'General',
-            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
-            createdAt: new Date().toISOString(),
-            intent: 'RECORD'
-          });
-        }
       }
 
       if (source === 'whatsapp-evolution') {
