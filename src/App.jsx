@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
 import { ShieldCheck, Globe, CheckCircle2, Users } from 'lucide-react';
 import './index.css';
 
@@ -246,6 +246,16 @@ function App() {
   };
 
   // --- Cálculos Dinâmicos ---
+  
+  // 0. User Profile Data (for logic)
+  const [userData, setUserData] = useState({});
+  useEffect(() => {
+    if (!userId) return;
+    const unsubscribe = onSnapshot(doc(db, 'usuarios', userId), (doc) => {
+      setUserData(doc.exists() ? doc.data() : {});
+    });
+    return () => unsubscribe();
+  }, [userId]);
 
   // 1. Totais
   const totalExpenses = transactions
@@ -258,8 +268,11 @@ function App() {
 
   const balance = totalIncome - totalExpenses;
 
-  // 2. Porcentagem de Gastos (1% por transação, limitado a 100%)
-  const spendingPercentage = Math.min(transactions.length, 100);
+  // 2. Spending Percentage (Based on income if available, else 1% per transaction)
+  const incomeAsNumber = parseFloat(userData?.monthlyIncome || 0);
+  const spendingPercentage = incomeAsNumber > 0 
+    ? Math.min(Math.round((totalExpenses / incomeAsNumber) * 100), 100)
+    : Math.min(transactions.length, 100);
 
   // 3. Agrupamento por Categorias Dinâmico
   const categoriesMap = transactions

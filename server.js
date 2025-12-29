@@ -142,8 +142,8 @@ async function processMessageBackground(text, sender, instance, source) {
     if (aiFailed || !transactionData) {
       if (source === 'whatsapp-evolution') {
         const doubtMsg = isBrazil 
-          ? `🤔 *Fiquei em dúvida!* Não consegui entender muito bem essa mensagem. Pode repetir de uma forma mais clara?`
-          : `🤔 *I'm in doubt!* I couldn't quite understand that message. Could you please rephrase it?`;
+          ? `🤔 *Fiquei em dúvida!* Não consegui entender muito bem essa mensagem. Se for seu salário ou dia de pagamento, pode repetir de uma forma mais clara?`
+          : `🤔 *I'm in doubt!* I couldn't quite understand that message. If it was about your income or payday, could you please rephrase it?`;
         await sendMessage(instance, sender, doubtMsg);
       }
       return;
@@ -151,31 +151,63 @@ async function processMessageBackground(text, sender, instance, source) {
     
     // 2. Handle based on Intent
     const userRef = db.collection('usuarios').doc(sender);
-    
-    // Update last interaction for proactivity tracking
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() || {};
+
+    // Update last interaction
     await userRef.set({ 
       lastInteraction: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }, { merge: true });
 
-    if (transactionData.intent === 'PROFILE_UPDATE' && transactionData.profile) {
+    // --- ONBOARDING LOGIC & PROFILE UPDATES ---
+    if (transactionData.intent === 'PROFILE_UPDATE') {
       console.log(`[Background] 👤 Updating profile for ${sender}...`);
-      await userRef.set(transactionData.profile, { merge: true });
       
-      if (source === 'whatsapp-evolution') {
-        const reply = isBrazil 
-          ? `✅ *Perfil atualizado!* Salvei suas informações de renda e pagamento. 😉`
-          : `✅ *Profile updated!* I've saved your income and payment info. 😉`;
-        await sendMessage(instance, sender, reply);
+      const updates = {};
+      if (transactionData.amount) updates.monthlyIncome = parseFloat(transactionData.amount);
+      if (transactionData.payDay) updates.payDay = parseInt(transactionData.payDay);
 
-        // Se o usuário acabou de informar o salário mas não a data, avisar que logo perguntaremos
-        const profile = transactionData.profile;
-        if (profile.monthlyIncome && !profile.payDay) {
-           const waitMsg = isBrazil 
-            ? `Dica: Notei que você não informou o dia do pagamento. Em breve te perguntarei sobre isso para organizar melhor! 📅`
-            : `Tip: I noticed you didn't mention your payday. I'll ask you about that soon to help organize better! 📅`;
-           await sendMessage(instance, sender, waitMsg);
+      await userRef.set(updates, { merge: true });
+
+      if (source === 'whatsapp-evolution') {
+        // If we just got the income, ask for payday
+        if (updates.monthlyIncome && !userData.payDay && !updates.payDay) {
+          const paydayMsg = isBrazil
+            ? `✅ *Renda salva!* Agora, por favor, me informe o *dia do mês* que você costuma receber seu salário (ex: "dia 5", "todo dia 10").`
+            : `✅ *Income saved!* Now, please let me know the *date* you receive your monthly income (e.g., "the 5th", "every 10th").`;
+          await sendMessage(instance, sender, paydayMsg);
+          return;
         }
+
+        // If we just got the payday (or both), check if we need to sync previous spending
+        if (updates.payDay || (userData.monthlyIncome && updates.payDay)) {
+          const finalPayDay = updates.payDay || userData.payDay;
+          const today = new Date().getDate();
+          
+          let syncNeeded = false;
+          if (today > finalPayDay) syncNeeded = true; // Payday already passed this month
+          if (today < finalPayDay && today > 1) syncNeeded = true; // Still early, but month started
+
+          if (syncNeeded) {
+            const syncMsg = isBrazil
+              ? `✅ *Entendido!* Como o dia do seu pagamento (${finalPayDay}) já passou ou o mês já começou, quanto você acha que já gastou desde o recebimento da sua renda? Assim eu acerto seu saldo inicial! 📈`
+              : `✅ *Got it!* Since your payday (${finalPayDay}) has passed or the month has already started, how much do you think you've spent since receiving your income? This will help me set your initial balance! 📈`;
+            await sendMessage(instance, sender, syncMsg);
+          } else {
+            const doneMsg = isBrazil
+              ? `✅ *Tudo pronto!* Seu perfil está configurado. Agora é só me mandar seus gastos diários! 🚀`
+              : `✅ *All set!* Your profile is configured. Now just send me your daily expenses! 🚀`;
+            await sendMessage(instance, sender, doneMsg);
+          }
+          return;
+        }
+
+        // Generic update
+        const reply = isBrazil 
+          ? `✅ *Perfil atualizado!* Informações salvas com sucesso. 😉`
+          : `✅ *Profile updated!* Information saved successfully. 😉`;
+        await sendMessage(instance, sender, reply);
       }
       return;
     }
@@ -183,25 +215,19 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'SYNC') {
       console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
       const reportedBalance = parseFloat(transactionData.amount);
-      
-      // Get current state
-      const userSnap = await userRef.get();
-      const userData = userSnap.data() || {};
       const { totalIncome, currentBalance } = await calculateUserTotals(userRef, isBrazil);
       
-      // If no income recorded this month, add the monthlyIncome from profile first
-      if (totalIncome === 0 && userData.monthlyIncome > 0) {
+      if (totalIncome === 0 && (userData.monthlyIncome || 0) > 0) {
         console.log(`[Background] 💰 Adding monthly income (R$${userData.monthlyIncome}) before sync.`);
         await userRef.collection('transactions').add({
           amount: userData.monthlyIncome,
           type: 'income',
-          category: isBrazil ? 'Salário' : 'Salary',
-          description: isBrazil ? 'Renda Mensal' : 'Monthly Income',
+          category: 'General',
+          description: isBrazil ? 'Renda Mensal (Onboarding)' : 'Monthly Income (Onboarding)',
           createdAt: new Date().toISOString(),
           intent: 'RECORD'
         });
         
-        // Refresh totals after adding income
         const refreshed = await calculateUserTotals(userRef, isBrazil);
         const diff = reportedBalance - refreshed.currentBalance;
         
@@ -209,20 +235,19 @@ async function processMessageBackground(text, sender, instance, source) {
           await userRef.collection('transactions').add({
             amount: Math.abs(diff),
             type: diff > 0 ? 'income' : 'expense',
-            category: isBrazil ? 'Ajuste' : 'Adjustment',
-            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
+            category: 'General',
+            description: isBrazil ? 'Ajuste Inicial' : 'Initial Adjustment',
             createdAt: new Date().toISOString(),
             intent: 'RECORD'
           });
         }
       } else {
-        // Just standard differential sync
         const diff = reportedBalance - currentBalance;
         if (Math.abs(diff) > 0.01) {
           await userRef.collection('transactions').add({
             amount: Math.abs(diff),
             type: diff > 0 ? 'income' : 'expense',
-            category: isBrazil ? 'Ajuste' : 'Adjustment',
+            category: 'General',
             description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
             createdAt: new Date().toISOString(),
             intent: 'RECORD'
@@ -240,20 +265,10 @@ async function processMessageBackground(text, sender, instance, source) {
     }
 
     if (transactionData.intent === 'UNCERTAIN') {
-      console.log(`[Background] ❓ Uncertain intent for ${sender}. Suggestion: ${transactionData.suggestion}`);
       if (source === 'whatsapp-evolution') {
-        let reply = "";
-        const suggestion = transactionData.suggestion;
-
-        if (isBrazil) {
-          reply = suggestion 
-            ? `🤔 *Fiquei em dúvida...* Você quis dizer: "_${suggestion}_"?`
-            : `🤔 *Hum... não tenho certeza.* Poderia repetir de uma forma mais simples?`;
-        } else {
-          reply = suggestion
-            ? `🤔 *I'm in doubt...* Did you mean: "_${suggestion}_"?`
-            : `🤔 *Hmm... I'm not sure.* Could you please rephrase that for me?`;
-        }
+        const reply = isBrazil
+          ? `🤔 *Hum... não tenho certeza.* Poderia repetir de uma forma mais simples?`
+          : `🤔 *Hmm... I'm not sure.* Could you please rephrase that for me?`;
         await sendMessage(instance, sender, reply);
       }
       return;
@@ -262,11 +277,7 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'REMOVE') {
       console.log(`[Background] 🗑️ Removing last transaction for ${sender}...`);
       const amountToRemove = transactionData.amount;
-      
-      const lastTransactions = await userRef.collection('transactions')
-        .orderBy('createdAt', 'desc')
-        .limit(10)
-        .get();
+      const lastTransactions = await userRef.collection('transactions').orderBy('createdAt', 'desc').limit(10).get();
 
       let deleted = false;
       for (const doc of lastTransactions.docs) {
@@ -286,7 +297,7 @@ async function processMessageBackground(text, sender, instance, source) {
       return;
     }
 
-    // Default: RECORD (or fallback)
+    // --- RECORD (Income or Expense) ---
     console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
     const docData = {
       ...transactionData,
@@ -311,12 +322,23 @@ async function processMessageBackground(text, sender, instance, source) {
 
         let replyText = "";
         const isIncome = transactionData.type === 'income';
-        const category = transactionData.category || (isBrazil ? 'Geral' : 'General');
+        const categoryKey = transactionData.category || 'General';
+        
+        // Category Map for display
+        const categoryNames = {
+          Food: isBrazil ? 'Alimentação' : 'Food',
+          Transport: isBrazil ? 'Transporte' : 'Transport',
+          Shopping: isBrazil ? 'Compras' : 'Shopping',
+          Leisure: isBrazil ? 'Lazer' : 'Leisure',
+          Bills: isBrazil ? 'Contas' : 'Bills',
+          General: isBrazil ? 'Geral' : 'General'
+        };
+        const categoryDisplay = categoryNames[categoryKey] || categoryKey;
 
         if (isBrazil) {
           replyText = isIncome 
             ? `💰 *Saldo adicionado!* +R$${formatVal(transactionData.amount)}\n\n`
-            : `💸 *Gasto registrado!* -R$${formatVal(transactionData.amount)} (${category})\n\n`;
+            : `💸 *Gasto registrado!* -R$${formatVal(transactionData.amount)} (${categoryDisplay})\n\n`;
           
           replyText += `📊 *Resumo:*\n` +
             `• Gasto hoje: R$${formatVal(totalDia)}\n` +
@@ -326,7 +348,7 @@ async function processMessageBackground(text, sender, instance, source) {
         } else {
           replyText = isIncome 
             ? `💰 *Balance added!* +£${formatVal(transactionData.amount)}\n\n`
-            : `💸 *Expense logged!* -£${formatVal(transactionData.amount)} (${category})\n\n`;
+            : `💸 *Expense logged!* -£${formatVal(transactionData.amount)} (${categoryDisplay})\n\n`;
           
           replyText += `📊 *Summary:*\n` +
               `• Today's spending: £${formatVal(totalDia)}\n` +
@@ -336,6 +358,15 @@ async function processMessageBackground(text, sender, instance, source) {
         }
         
         await sendMessage(instance, sender, replyText);
+
+        // --- ONBOARDING TRIGGER: Ask about income if missing ---
+        if (!userData.monthlyIncome && !transactionData.monthlyIncome) {
+           const onboardingMsg = isBrazil
+            ? `Oi! Notei que ainda não sei qual sua renda mensal. *Qual seria sua renda mensal? Para adicionar ao seu dashboard?* 💰`
+            : `Hi! I noticed I don't know your monthly income yet. *What would your monthly income be? To add to your dashboard?* 💰`;
+          await sendMessage(instance, sender, onboardingMsg);
+        }
+
       } catch (replyError) {
         console.error('[Background] ⚠️ Failed to send WhatsApp reply:', replyError.message);
       }
