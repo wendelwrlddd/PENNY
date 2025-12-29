@@ -118,6 +118,11 @@ async function processMessageBackground(text, sender, instance, source) {
       return;
     }
 
+    // --- NEW: Fetch User Data early to provide context to OpenAI ---
+    const userRef = db.collection('usuarios').doc(sender);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() || {};
+
     let transactionData = null;
     let aiFailed = false;
 
@@ -134,7 +139,8 @@ async function processMessageBackground(text, sender, instance, source) {
       console.log(`[Background] 🎯 Regex Matched SYNC: ${transactionData.amount}`);
     } else {
       try {
-        transactionData = await extractFinancialData(text, isBrazil);
+        // Pass userData as 3rd param for context
+        transactionData = await extractFinancialData(text, isBrazil, userData);
       } catch (aiError) {
         console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
         aiFailed = true;
@@ -151,11 +157,7 @@ async function processMessageBackground(text, sender, instance, source) {
       return;
     }
     
-    // 2. Handle based on Intent
-    const userRef = db.collection('usuarios').doc(sender);
-    const userSnap = await userRef.get();
-    const userData = userSnap.data() || {};
-
+    // 2. Handle based on Intent (userRef already defined above)
     // Update last interaction
     await userRef.set({ 
       lastInteraction: new Date().toISOString(),
