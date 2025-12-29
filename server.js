@@ -263,6 +263,13 @@ async function processMessageBackground(text, sender, instance, source) {
       const batch = db.batch();
       txs.docs.forEach(doc => batch.delete(doc.ref));
       await batch.commit();
+
+      if (!transactionData.response_message && source === 'whatsapp-evolution') {
+        const reply = isBrazil 
+          ? `🗑️ *Perfil resetado!* Apaguei seus dados e histórico. Você é um novo usuário agora! 😉`
+          : `🗑️ *Profile reset!* I've cleared your data and history. You're a new user now! 😉`;
+        await sendMessage(instance, sender, reply);
+      }
     }
 
     // --- RESPOND ---
