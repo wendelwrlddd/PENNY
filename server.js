@@ -156,7 +156,8 @@ async function processMessageBackground(text, sender, instance, source) {
       monthlyIncome: userData.monthlyIncome || null,
       currentBalance: currentBalance,
       lastAction: userData.lastAction || 'none',
-      onboarding_step: onboarding_step
+      onboarding_step: onboarding_step,
+      dashboard_link: `https://penny-assistant.vercel.app/dashboard/${sender}`
     };
 
     let transactionData = null;
