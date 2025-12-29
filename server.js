@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
+import admin from 'firebase-admin';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
 import { sendMessage, logoutInstance, deleteInstance } from './lib/evolution.js';
@@ -312,6 +313,29 @@ async function processMessageBackground(text, sender, instance, source) {
       return;
     }
 
+    if (transactionData.intent === 'RESET') {
+      console.log(`[Background] 🗑️ Resetting profile for ${sender}...`);
+      await userRef.update({
+        monthlyIncome: admin.firestore.FieldValue.delete(),
+        payDay: admin.firestore.FieldValue.delete(),
+        lastProactivePrompt: admin.firestore.FieldValue.delete()
+      });
+      
+      // Also clear transactions if you want a TRULY clean slate
+      const txs = await userRef.collection('transactions').get();
+      const batch = db.batch();
+      txs.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+
+      if (source === 'whatsapp-evolution') {
+        const reply = isBrazil 
+          ? `🗑️ *Perfil resetado!* Apaguei seus dados de renda, dia de pagamento e histórico de transações. Você é um novo usuário agora! 😉`
+          : `🗑️ *Profile reset!* I've cleared your income, payday, and transaction history. You're a new user now! 😉`;
+        await sendMessage(instance, sender, reply);
+      }
+      return;
+    }
+
     // --- RECORD (Income or Expense) ---
     console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
     const docData = {
@@ -389,9 +413,7 @@ async function processMessageBackground(text, sender, instance, source) {
         await sendMessage(instance, sender, replyText);
 
         // --- ONBOARDING TRIGGER: Ask about income if missing ---
-        console.log(`[Onboarding Check] User: ${sender}, Income: ${userData.monthlyIncome}, AI Income: ${transactionData.monthlyIncome}`);
         if (!userData.monthlyIncome && !transactionData.monthlyIncome) {
-           console.log(`[Onboarding Check] 🚀 Triggering income question...`);
            const onboardingMsg = isBrazil
             ? `Oi! Notei que ainda não sei qual sua renda mensal. *Qual seria sua renda mensal? Para adicionar ao seu dashboard?* 💰`
             : `Hi! I noticed I don't know your monthly income yet. *What would your monthly income be? To add to your dashboard?* 💰`;
