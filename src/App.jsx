@@ -67,9 +67,6 @@ const translations = {
       General: 'General',
       Bills: 'Bills'
     },
-    disarm: "Emergency Disconnect",
-    disarmSuccess: "Disconnected for your security!",
-    disarmError: "Failed to disconnect. Try manually.",
     pricingTitle: "Flexible Plans for You",
     pricingDesc: "Choose the plan that best fits your financial management needs.",
     monthly: "Monthly",
@@ -120,9 +117,6 @@ const translations = {
       General: 'Geral',
       Bills: 'Contas'
     },
-    disarm: "Botão de Desarme (Pânico)",
-    disarmSuccess: "Número desconectado para sua segurança!",
-    disarmError: "Falha ao desconectar. Tente manualmente.",
     pricingTitle: "Planos Flexíveis para Você",
     pricingDesc: "Escolha o plano que melhor se adapta às suas necessidades de gestão financeira.",
     monthly: "Mensal",
@@ -188,29 +182,6 @@ function App() {
     return () => unsubscribe();
   }, [userId]);
 
-  const handleDisarm = async () => {
-    const confirmDisarm = window.confirm(t.disarm + "?");
-    if (!confirmDisarm) return;
-
-    try {
-      const response = await fetch('https://penny-finance-backend.fly.dev/api/sys/disarm', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': 'SuaChaveMestra123' // Fallback or matching Evolution Key
-        },
-        body: JSON.stringify({ instance: 'OfficialMeta' }) // Default instance
-      });
-
-      if (response.ok) {
-        alert(t.disarmSuccess);
-      } else {
-        alert(t.disarmError);
-      }
-    } catch (err) {
-      alert(t.disarmError);
-    }
-  };
 
   const t = isBrazil ? translations.pt : translations.en;
 
@@ -565,13 +536,6 @@ function App() {
                    <p className="text-gray-500 text-sm">{t.welcome}, Wendel</p>
                 </div>
                 <div className="flex items-center gap-4">
-                   <button 
-                    onClick={handleDisarm}
-                    title={t.disarm}
-                    className="flex items-center gap-2 px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl transition-all font-bold text-sm"
-                   >
-                     <span>🛑</span> {t.disarm}
-                   </button>
                    <div className="p-3 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">🔔</div>
                    <div className="p-3 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">⚙️</div>
                 </div>
