@@ -389,7 +389,9 @@ async function processMessageBackground(text, sender, instance, source) {
         await sendMessage(instance, sender, replyText);
 
         // --- ONBOARDING TRIGGER: Ask about income if missing ---
+        console.log(`[Onboarding Check] User: ${sender}, Income: ${userData.monthlyIncome}, AI Income: ${transactionData.monthlyIncome}`);
         if (!userData.monthlyIncome && !transactionData.monthlyIncome) {
+           console.log(`[Onboarding Check] 🚀 Triggering income question...`);
            const onboardingMsg = isBrazil
             ? `Oi! Notei que ainda não sei qual sua renda mensal. *Qual seria sua renda mensal? Para adicionar ao seu dashboard?* 💰`
             : `Hi! I noticed I don't know your monthly income yet. *What would your monthly income be? To add to your dashboard?* 💰`;
