@@ -2,7 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { extractFinancialData } from './lib/gemini.js';
+import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
 import { sendMessage, logoutInstance, deleteInstance } from './lib/evolution.js';
 
@@ -134,7 +134,7 @@ async function processMessageBackground(text, sender, instance, source) {
       try {
         transactionData = await extractFinancialData(text, isBrazil);
       } catch (aiError) {
-        console.error('[Background] ⚠️ Gemini failed:', aiError.message);
+        console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
         aiFailed = true;
       }
     }
@@ -290,6 +290,7 @@ async function processMessageBackground(text, sender, instance, source) {
     console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
     const docData = {
       ...transactionData,
+      description: text,
       createdAt: new Date().toISOString(),
       originalMessage: text,
       userPhone: sender,
@@ -559,7 +560,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
-  console.log(`- GEMINI_API_KEY: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   
   // Initial run in 10 seconds to not block startup
   setTimeout(checkProactiveMessages, 10000);
