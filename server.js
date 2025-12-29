@@ -16,7 +16,6 @@ const PORT = process.env.PORT || 8080;
 // Update this list with authorized phone numbers (only digits)
 const ALLOWED_NUMBERS = [
   '557391082831', // User Primary Number
-  '554498035109', // Authorized 2024-12-29
 ];
 
 app.use(cors());
