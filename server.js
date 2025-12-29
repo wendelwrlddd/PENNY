@@ -206,24 +206,65 @@ async function processMessageBackground(text, sender, instance, source) {
 
     if (transactionData.intent === 'SET_CURRENT_BALANCE') {
       console.log(`[Background] 🔄 Setting current balance...`);
-      let adjustment = transactionData.adjustment_expense;
       
-      // If AI didn't calculate it for some reason, calculate it here if income exists
-      if (adjustment === null && aiState.monthlyIncome) {
-         const informedBalance = parseFloat(text.replace(/\D/g, '')) || 0; // Backup extraction
-         adjustment = aiState.monthlyIncome - informedBalance;
-      }
-
-      if (adjustment !== null) {
-        // Record adjustment as an expense
+      if (transactionData.balance_change) {
+        // CASE 2: Surplus logic - Informational income to adjust balance
+        console.log(`[Background] 📈 Surplus detected: ${transactionData.balance_change}`);
         await userRef.collection('transactions').add({
-          amount: Math.max(0, adjustment),
-          type: 'expense',
-          category: 'General',
-          description: isBrazil ? 'Ajuste de Saldo' : 'Balance Sync',
+          amount: parseFloat(transactionData.balance_change),
+          type: 'income',
+          category: 'Surplus',
+          description: isBrazil ? 'Ajuste de Saldo (Sobra)' : 'Balance Sync (Surplus)',
           createdAt: new Date().toISOString(),
           intent: 'SET_CURRENT_BALANCE'
         });
+      } else {
+        // CASE 1: Adjustment expense logic
+        let adjustment = transactionData.adjustment_expense;
+        
+        // If AI didn't calculate it for some reason, calculate it here if income exists
+        if (adjustment === null && aiState.monthlyIncome) {
+           const informedBalance = parseFloat(text.replace(/\D/g, '')) || 0; // Backup extraction
+           adjustment = aiState.monthlyIncome - informedBalance;
+        }
+
+        if (adjustment !== null) {
+          // Record adjustment as an expense
+          await userRef.collection('transactions').add({
+            amount: Math.max(0, adjustment),
+            type: 'expense',
+            category: 'General',
+            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Sync',
+            createdAt: new Date().toISOString(),
+            intent: 'SET_CURRENT_BALANCE'
+          });
+        }
+      }
+    }
+
+    if (transactionData.intent === 'ADD_BALANCE') {
+      const amount = parseFloat(transactionData.balance_change || 0);
+      console.log(`[Background] 💰 Adding balance: ${amount}`);
+      await userRef.collection('transactions').add({
+        amount: amount,
+        type: 'income',
+        category: 'General',
+        description: text,
+        createdAt: new Date().toISOString(),
+        intent: 'ADD_BALANCE'
+      });
+    }
+
+    if (transactionData.intent === 'REMOVE_EXPENSE' || transactionData.remove_expense) {
+      console.log(`[Background] 🗑️ Removing last expense for ${sender}...`);
+      const lastTxSnap = await userRef.collection('transactions')
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get();
+      
+      if (!lastTxSnap.empty) {
+        await lastTxSnap.docs[0].ref.delete();
+        console.log(`[Background] ✅ Deleted transaction: ${lastTxSnap.docs[0].id}`);
       }
     }
 
