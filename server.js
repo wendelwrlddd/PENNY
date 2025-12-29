@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import cron from 'node-cron';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
 import { sendMessage, logoutInstance, deleteInstance } from './lib/evolution.js';
@@ -326,35 +327,49 @@ async function processMessageBackground(text, sender, instance, source) {
         
         // Category Map for display
         const categoryNames = {
-          Food: isBrazil ? 'Alimentação' : 'Food',
-          Transport: isBrazil ? 'Transporte' : 'Transport',
-          Shopping: isBrazil ? 'Compras' : 'Shopping',
-          Leisure: isBrazil ? 'Lazer' : 'Leisure',
-          Bills: isBrazil ? 'Contas' : 'Bills',
-          General: isBrazil ? 'Geral' : 'General'
+          Food: { name: isBrazil ? 'Alimentação' : 'Food', emoji: '🍔' },
+          Transport: { name: isBrazil ? 'Transporte' : 'Transport', emoji: '🚗' },
+          Shopping: { name: isBrazil ? 'Compras' : 'Shopping', emoji: '🛒' },
+          Leisure: { name: isBrazil ? 'Lazer' : 'Leisure', emoji: '🎡' },
+          Bills: { name: isBrazil ? 'Contas' : 'Bills', emoji: '📝' },
+          General: { name: isBrazil ? 'Geral' : 'General', emoji: '💡' }
         };
-        const categoryDisplay = categoryNames[categoryKey] || categoryKey;
+        const categoryObj = categoryNames[categoryKey] || categoryNames.General;
+        const categoryDisplay = categoryObj.name;
+        const emoji = categoryObj.emoji;
 
         if (isBrazil) {
           replyText = isIncome 
             ? `💰 *Saldo adicionado!* +R$${formatVal(transactionData.amount)}\n\n`
-            : `💸 *Gasto registrado!* -R$${formatVal(transactionData.amount)} (${categoryDisplay})\n\n`;
+            : `💸 *Gasto registrado!* -R$${formatVal(transactionData.amount)} ${emoji} (${categoryDisplay})\n\n`;
           
           replyText += `📊 *Resumo:*\n` +
             `• Gasto hoje: R$${formatVal(totalDia)}\n` +
             `• Gasto no mês: R$${formatVal(totalMes)}\n` +
-            `• *Saldo Atual: R$${formatVal(currentBalance)}*\n\n` +
-            `🔗 ${personalizedLink}`;
+            `• *Saldo Atual: R$${formatVal(currentBalance)}*\n\n`;
+
+          // Budget Alert (80%)
+          if (userData.monthlyIncome > 0 && totalMes > 0.8 * userData.monthlyIncome) {
+             replyText += `⚠️ *ALERTA:* Você já usou mais de 80% da sua renda este mês! Tente segurar um pouco. 🛑\n\n`;
+          }
+
+          replyText += `🔗 ${personalizedLink}`;
         } else {
           replyText = isIncome 
             ? `💰 *Balance added!* +£${formatVal(transactionData.amount)}\n\n`
-            : `💸 *Expense logged!* -£${formatVal(transactionData.amount)} (${categoryDisplay})\n\n`;
+            : `💸 *Expense logged!* -£${formatVal(transactionData.amount)} ${emoji} (${categoryDisplay})\n\n`;
           
           replyText += `📊 *Summary:*\n` +
               `• Today's spending: £${formatVal(totalDia)}\n` +
               `• This month's spending: £${formatVal(totalMes)}\n` +
-              `• *Current Balance: £${formatVal(currentBalance)}*\n\n` +
-              `🔗 ${personalizedLink}`;
+              `• *Current Balance: £${formatVal(currentBalance)}*\n\n`;
+
+          // Budget Alert (80%)
+          if (userData.monthlyIncome > 0 && totalMes > 0.8 * userData.monthlyIncome) {
+             replyText += `⚠️ *BUDGET ALERT:* You've used over 80% of your income this month! Tread carefully. 🛑\n\n`;
+          }
+
+          replyText += `🔗 ${personalizedLink}`;
         }
         
         await sendMessage(instance, sender, replyText);
@@ -540,7 +555,7 @@ async function checkProactiveMessages() {
       // Only prompt if last prompt was > 30 mins ago
       if (lastPrompt < thirtyMinsAgo) {
         const isBrazil = userId.startsWith('55');
-        const instance = userData.instance || 'OfficialMeta'; // Fallback instance
+        const instance = userData.instance || 'penny-instance'; // Better default, but should come from DB
         
         let message = "";
         
