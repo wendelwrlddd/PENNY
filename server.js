@@ -135,369 +135,126 @@ async function processMessageBackground(text, sender, instance, source) {
       return;
     }
 
-    // --- NEW: Fetch User Data early to provide context to OpenAI ---
+    // --- 3. Fetch full User State for AI Awareness ---
     const userRef = db.collection('usuarios').doc(sender);
     const userSnap = await userRef.get();
     const userData = userSnap.data() || {};
+    
+    // Calculate current balance and totals for the AI
+    const { totalIncome, totalExpenses, currentBalance } = await calculateUserTotals(userRef, isBrazil);
+    
+    const aiState = {
+      monthlyIncome: userData.monthlyIncome || null,
+      payDay: userData.payDay || null,
+      currentBalance: currentBalance,
+      lastAction: userData.lastAction || 'none'
+    };
 
     let transactionData = null;
-    let aiFailed = false;
-
-    // --- STRATEGY: Regex Fallback for SYNC (Bulletproof) ---
-    const syncRegex = /(atualize|ajuste|saldo|balance|tenho|resta|only|so|só).*?(\d+([.,]\d+)?)/i;
-    const match = text.match(syncRegex);
-    
-    if (match && (text.toLowerCase().includes('saldo') || text.toLowerCase().includes('balance') || text.toLowerCase().includes('tenho') || text.toLowerCase().includes('atualize'))) {
-      const amountStr = match[2].replace(',', '.');
-      transactionData = {
-        intent: 'SYNC',
-        amount: parseFloat(amountStr)
-      };
-      console.log(`[Background] 🎯 Regex Matched SYNC: ${transactionData.amount}`);
-    } else {
-      try {
-        // Pass userData as 3rd param for context
-        transactionData = await extractFinancialData(text, isBrazil, userData);
-      } catch (aiError) {
-        console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
-        aiFailed = true;
+    try {
+      transactionData = await extractFinancialData(text, aiState);
+    } catch (aiError) {
+      console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
+      if (source === 'whatsapp-evolution') {
+        const errorMsg = isBrazil 
+          ? `❌ *Ops!* Tive um problema técnico ao processar sua mensagem. Tente novamente em instantes.`
+          : `❌ *Oops!* I had a technical problem processing your message. Please try again in a moment.`;
+        await sendMessage(instance, sender, errorMsg);
       }
+      return;
     }
 
-    if (aiFailed || !transactionData) {
-      if (source === 'whatsapp-evolution') {
-        const doubtMsg = isBrazil 
-          ? `🤔 *Fiquei em dúvida!* Não consegui entender muito bem essa mensagem. Se for seu salário ou dia de pagamento, pode repetir de uma forma mais clara?`
-          : `🤔 *I'm in doubt!* I couldn't quite understand that message. If it was about your income or payday, could you please rephrase it?`;
-        await sendMessage(instance, sender, doubtMsg);
+    if (!transactionData || transactionData.intent === 'NO_ACTION') {
+      console.log(`[Background] ℹ️ AI decided NO_ACTION for: ${text}`);
+      if (transactionData?.response_message && source === 'whatsapp-evolution') {
+        await sendMessage(instance, sender, transactionData.response_message);
       }
       return;
     }
     
-    // 2. Handle based on Intent (userRef already defined above)
-    // Update last interaction
+    // --- EXECUTE AI DECISION ---
+    console.log(`[Background] 🧠 Intent: ${transactionData.intent}`);
+
+    // Update last interaction and action
     await userRef.set({ 
       lastInteraction: new Date().toISOString(),
+      lastAction: transactionData.intent,
       updatedAt: new Date().toISOString()
     }, { merge: true });
 
-    // --- SAFEGUARD: Detect Onboarding Step 3 (Balance) masquerading as PROFILE_UPDATE ---
-    // If we have Income & PayDay, but NO "Initial Adjustment" transaction yet,
-    // and the user sends a number, it is almost certainly the Initial Balance (SYNC).
-    if (transactionData.intent === 'PROFILE_UPDATE' || transactionData.intent === 'RECORD') {
-       if (userData.monthlyIncome && userData.payDay) {
-          const adjCheck = await userRef.collection('transactions')
-            .where('description', 'in', ['Ajuste Inicial', 'Initial Adjustment', 'Gasto Mensal (Sincronização)'])
-            .limit(1)
-            .get();
-          
-          if (adjCheck.empty) {
-             console.log('[Background] 🛡️ Safeguard: Forcing SYNC for valid onboarding balance response.');
-             transactionData.intent = 'SYNC';
-             // Ensure amount is parsed if it was classified as payDay erroneously
-             if (!transactionData.amount && transactionData.payDay && transactionData.payDay > 31) {
-                transactionData.amount = transactionData.payDay;
-                transactionData.payDay = null;
-             }
-          }
-       }
+    if (transactionData.intent === 'SET_MONTHLY_INCOME') {
+      const income = parseFloat(transactionData.monthly_income);
+      console.log(`[Background] 💰 Setting income: ${income}`);
+      await userRef.update({ monthlyIncome: income });
+      
+      // Record income transaction
+      await userRef.collection('transactions').add({
+        amount: income,
+        type: 'income',
+        category: 'General',
+        description: isBrazil ? 'Renda Mensal' : 'Monthly Income',
+        createdAt: new Date().toISOString(),
+        intent: 'SET_MONTHLY_INCOME'
+      });
     }
 
-    // --- ONBOARDING LOGIC & PROFILE UPDATES ---
-    if (transactionData.intent === 'PROFILE_UPDATE') {
-      console.log(`[Background] 👤 Updating profile for ${sender}...`);
-      
-      const updates = {};
-      if (transactionData.amount) {
-        updates.monthlyIncome = parseFloat(transactionData.amount);
-        // --- NEW: Record income transaction immediately ---
-        console.log(`[Background] 💰 Recording initial income transaction: R$${updates.monthlyIncome}`);
-        await userRef.collection('transactions').add({
-          amount: updates.monthlyIncome,
-          type: 'income',
-          category: 'General',
-          description: isBrazil ? 'Renda Mensal (Onboarding)' : 'Monthly Income (Onboarding)',
-          createdAt: new Date().toISOString(),
-          intent: 'RECORD'
-        });
-      }
-      if (transactionData.payDay) updates.payDay = parseInt(transactionData.payDay);
-
-      await userRef.set(updates, { merge: true });
-
-      if (source === 'whatsapp-evolution') {
-        // If we just got the income, ask for payday
-        if (updates.monthlyIncome && !userData.payDay && !updates.payDay) {
-          const paydayMsg = isBrazil
-            ? `✅ *Renda salva!* Agora, por favor, me informe o *dia do mês* em que você costuma receber seu salário (ex: "dia 5", "todo dia 10").`
-            : `✅ *Income saved!* Now, please let me know the *date* you typically receive your monthly income (e.g., "the 5th", "every 10th").`;
-          await sendMessage(instance, sender, paydayMsg);
-          return;
-        }
-
-        // If we just got the payday (or both), check if we need to sync previous spending
-        if (updates.payDay || (userData.monthlyIncome && updates.payDay)) {
-          const finalPayDay = updates.payDay || userData.payDay;
-          const today = new Date().getDate();
-          
-          let syncNeeded = false;
-          if (today > finalPayDay) syncNeeded = true; // Payday already passed this month
-          if (today < finalPayDay && today > 1) syncNeeded = true; // Still early, but month started
-
-          if (syncNeeded) {
-            const syncMsg = isBrazil
-              ? `✅ *Entendido!* Como o dia do seu pagamento (${finalPayDay}) já passou ou o mês já começou, qual é o seu *saldo atual*? Assim poderei atualizar seu dashboard e controlar tanto seus gastos quanto seu saldo daqui para frente. 📈`
-              : `✅ *Got it!* Since your payday (${finalPayDay}) has passed or the month has already started, what is your *current balance*? This will allow me to update your dashboard and help you track both your spending and balance moving forward. 📈`;
-            await sendMessage(instance, sender, syncMsg);
-          } else {
-            const doneMsg = isBrazil
-              ? `✅ *Tudo pronto!* Seu perfil foi configurado com sucesso. Agora, basta me enviar seus gastos diários para mantermos tudo sob controle! 🚀`
-              : `✅ *All set!* Your profile has been successfully configured. Now, simply send me your daily expenses, and I'll keep everything on track for you! 🚀`;
-            await sendMessage(instance, sender, doneMsg);
-          }
-          return;
-        }
-
-        // Generic update
-        const reply = isBrazil 
-          ? `✅ *Perfil atualizado!* Informações salvas com sucesso. 😉`
-          : `✅ *Profile updated!* Information saved successfully. 😉`;
-        await sendMessage(instance, sender, reply);
-      }
-      return;
+    if (transactionData.intent === 'SET_PAYDAY') {
+      const day = parseInt(transactionData.payday);
+      console.log(`[Background] 📅 Setting payday: ${day}`);
+      await userRef.update({ payDay: day });
     }
 
-    if (transactionData.intent === 'SYNC') {
-      console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
-      const reportedBalance = parseFloat(transactionData.amount);
-      const { currentBalance: oldBalance } = await calculateUserTotals(userRef, isBrazil);
+    if (transactionData.intent === 'SET_CURRENT_BALANCE') {
+      console.log(`[Background] 🔄 Setting current balance...`);
+      let adjustment = transactionData.adjustment_expense;
       
-      let initialSpending = 0;
-      let isInitialSync = false;
-
-      // Detect if this is the onboarding sync (no adjustment recorded yet)
-      const adjSnapshot = await userRef.collection('transactions')
-        .where('description', 'in', ['Ajuste Inicial', 'Initial Adjustment', 'Gasto Mensal (Sincronização)'])
-        .limit(1)
-        .get();
-      
-      if (adjSnapshot.empty && (userData.monthlyIncome || 0) > 0) {
-        isInitialSync = true;
+      // If AI didn't calculate it for some reason, calculate it here if income exists
+      if (adjustment === null && aiState.monthlyIncome) {
+         const informedBalance = parseFloat(text.replace(/\D/g, '')) || 0; // Backup extraction
+         adjustment = aiState.monthlyIncome - informedBalance;
       }
 
-      if (isInitialSync) {
-        console.log(`[Background] 🧼 Cleaning slate for initial sync...`);
-        // 1. Mark previous transactions of THIS MONTH as error (except the Income one)
-        const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
-        const now = new Date();
-        const monthStr = now.toLocaleDateString('en-CA', { timeZone: tz }).substring(0, 7);
-        
-        const txs = await userRef.collection('transactions').get();
-        const batch = db.batch();
-        txs.forEach(doc => {
-          const data = doc.data();
-          const created = new Date(data.createdAt || data.date);
-          const createdMonthStr = created.toLocaleDateString('en-CA', { timeZone: tz }).substring(0, 7);
-          
-          // If it's this month AND NOT the Income record we just created
-          if (createdMonthStr === monthStr && 
-              !data.description.includes('Renda Mensal') && 
-              !data.description.includes('Monthly Income') &&
-              data.type !== 'error') {
-            batch.update(doc.ref, { type: 'error' });
-          }
-        });
-        await batch.commit();
-
-        // 2. Calculate Strict Gasto: Income - Balance
-        initialSpending = (userData.monthlyIncome || 0) - reportedBalance;
-        
-        // 3. Record ONE single gasto transaction
+      if (adjustment !== null) {
+        // Record adjustment as an expense
         await userRef.collection('transactions').add({
-          amount: Math.max(0, initialSpending),
+          amount: Math.max(0, adjustment),
           type: 'expense',
           category: 'General',
-          description: isBrazil ? 'Gasto Mensal (Sincronização)' : 'Monthly Spend (Sync)',
+          description: isBrazil ? 'Ajuste de Saldo' : 'Balance Sync',
           createdAt: new Date().toISOString(),
-          intent: 'RECORD'
+          intent: 'SET_CURRENT_BALANCE'
         });
-
-      } else {
-        const diff = reportedBalance - oldBalance;
-        if (Math.abs(diff) > 0.01) {
-          await userRef.collection('transactions').add({
-            amount: Math.abs(diff),
-            type: diff > 0 ? 'income' : 'expense',
-            category: 'General',
-            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
-            createdAt: new Date().toISOString(),
-            intent: 'RECORD'
-          });
-        }
       }
-
-      if (source === 'whatsapp-evolution') {
-        const { totalMes: finalTotalMes } = await calculateUserTotals(userRef, isBrazil);
-        const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
-        let syncReply = "";
-
-        if (isInitialSync) {
-          syncReply = isBrazil
-            ? `🔄 *Saldo atualizado!* Como sua renda é de R$${formatVal(userData.monthlyIncome)} e seu saldo atual é R$${formatVal(reportedBalance)}, registrei um gasto de *R$${formatVal(initialSpending)}* para bater com suas contas. 📈\n\nAgora seu dashboard está sincronizado e pronto! 🚀`
-            : `🔄 *Balance updated!* Since your income is £${formatVal(userData.monthlyIncome)} and your current balance is £${formatVal(reportedBalance)}, I've recorded a spending of *£${formatVal(initialSpending)}* to match your records. 📈\n\nYour dashboard is now synced and ready! 🚀`;
-        } else {
-          syncReply = isBrazil
-            ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
-            : `🔄 *Balance synced!* I've updated your record to match the £${reportedBalance.toFixed(2)} in your account. All set! 😉`;
-        }
-        await sendMessage(instance, sender, syncReply);
-      }
-      return;
     }
 
-    if (transactionData.intent === 'UNCERTAIN') {
-      if (source === 'whatsapp-evolution') {
-        const reply = isBrazil
-          ? `🤔 *Hum... não tenho certeza.* Poderia repetir de uma forma mais simples?`
-          : `🤔 *Hmm... I'm not sure.* Could you please rephrase that for me?`;
-        await sendMessage(instance, sender, reply);
-      }
-      return;
-    }
-
-    if (transactionData.intent === 'REMOVE') {
-      console.log(`[Background] 🗑️ Removing last transaction for ${sender}...`);
-      const amountToRemove = transactionData.amount;
-      const lastTransactions = await userRef.collection('transactions').orderBy('createdAt', 'desc').limit(10).get();
-
-      let deleted = false;
-      for (const doc of lastTransactions.docs) {
-        if (parseFloat(doc.data().amount) === parseFloat(amountToRemove) && doc.data().type !== 'error') {
-          await doc.ref.update({ type: 'error' });
-          deleted = true;
-          break;
-        }
-      }
-
-      if (source === 'whatsapp-evolution') {
-        const reply = deleted
-          ? (isBrazil ? `✅ *Feito!* Removi o registro de R$${amountToRemove.toFixed(2)}.` : `✅ *Done!* Removed the £${amountToRemove.toFixed(2)} record.`)
-          : (isBrazil ? `❌ *Ops!* Não encontrei um registro recente de R$${amountToRemove.toFixed(2)}.` : `❌ *Oops!* I couldn't find a recent record of £${amountToRemove.toFixed(2)}.`);
-        await sendMessage(instance, sender, reply);
-      }
-      return;
-    }
-
-    if (transactionData.intent === 'RESET') {
-      console.log(`[Background] 🗑️ Resetting profile for ${sender}...`);
-      await userRef.update({
-        monthlyIncome: admin.firestore.FieldValue.delete(),
-        payDay: admin.firestore.FieldValue.delete(),
-        lastProactivePrompt: admin.firestore.FieldValue.delete()
-      });
+    if (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES') {
+      const expenses = transactionData.expenses || [];
+      console.log(`[Background] 💸 Adding ${expenses.length} expenses...`);
       
-      // Also clear transactions if you want a TRULY clean slate
-      const txs = await userRef.collection('transactions').get();
-      const batch = db.batch();
-      txs.docs.forEach(doc => batch.delete(doc.ref));
-      await batch.commit();
-
-      if (source === 'whatsapp-evolution') {
-        const reply = isBrazil 
-          ? `🗑️ *Perfil resetado!* Apaguei seus dados de renda, dia de pagamento e histórico de transações. Você é um novo usuário agora! 😉`
-          : `🗑️ *Profile reset!* I've cleared your income, payday, and transaction history. You're a new user now! 😉`;
-        await sendMessage(instance, sender, reply);
+      for (const exp of expenses) {
+        await userRef.collection('transactions').add({
+          amount: parseFloat(exp.amount),
+          category: exp.category || 'General',
+          description: text,
+          type: 'expense',
+          createdAt: new Date().toISOString(),
+          intent: transactionData.intent
+        });
       }
-      return;
     }
 
-    // --- RECORD (Income or Expense) ---
-    console.log(`[Background] 💾 Saving to usuarios/${sender}/transactions...`);
-    const docData = {
-      ...transactionData,
-      description: text,
-      createdAt: new Date().toISOString(),
-      originalMessage: text,
-      userPhone: sender,
-      instance: instance,
-      source: source
-    };
-    const docRef = await userRef.collection('transactions').add(docData);
-    console.log(`[Background] ✅ Saved with ID: ${docRef.id}`);
-    
-    await logRawMessage(instance, sender, text);
+    if (transactionData.intent === 'CORRECTION') {
+      console.log(`[Background] ✏️ Handling CORRECTION...`);
+      // Simpler correction for now: just record what the AI extracted if it's there
+      if (transactionData.monthly_income) await userRef.update({ monthlyIncome: transactionData.monthly_income });
+      if (transactionData.payday) await userRef.update({ payDay: transactionData.payday });
+    }
 
-    if (source === 'whatsapp-evolution') {
-      try {
-        const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
-        const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
-        const dashboardUrl = 'https://penny-finance.vercel.app'; 
-        const personalizedLink = `${dashboardUrl}?user=${sender}`;
-
-        let replyText = "";
-        const isIncome = transactionData.type === 'income';
-        const categoryKey = transactionData.category || 'General';
-        
-        // Category Map for display
-        const categoryNames = {
-          Food: { name: isBrazil ? 'Alimentação' : 'Food', emoji: '🍔' },
-          Transport: { name: isBrazil ? 'Transporte' : 'Transport', emoji: '🚗' },
-          Shopping: { name: isBrazil ? 'Compras' : 'Shopping', emoji: '🛒' },
-          Leisure: { name: isBrazil ? 'Lazer' : 'Leisure', emoji: '🎡' },
-          Bills: { name: isBrazil ? 'Contas' : 'Bills', emoji: '📝' },
-          General: { name: isBrazil ? 'Geral' : 'General', emoji: '💡' }
-        };
-        const categoryObj = categoryNames[categoryKey] || categoryNames.General;
-        const categoryDisplay = categoryObj.name;
-        const emoji = categoryObj.emoji;
-
-        if (isBrazil) {
-          replyText = isIncome 
-            ? `💰 *Saldo adicionado!* +R$${formatVal(transactionData.amount)}\n\n`
-            : `💸 *Gasto registrado!* -R$${formatVal(transactionData.amount)} ${emoji} (${categoryDisplay})\n\n`;
-          
-          replyText += `📊 *Resumo:*\n` +
-            `• Gasto hoje: R$${formatVal(totalDia)}\n` +
-            `• Gasto no mês: R$${formatVal(totalMes)}\n` +
-            `• *Saldo Atual: R$${formatVal(currentBalance)}*\n\n`;
-
-          // Budget Alert (80%)
-          if (userData.monthlyIncome > 0 && totalMes > 0.8 * userData.monthlyIncome) {
-             replyText += `⚠️ *ALERTA:* Você já usou mais de 80% da sua renda este mês! Tente segurar um pouco. 🛑\n\n`;
-          }
-
-          replyText += `🔗 ${personalizedLink}`;
-        } else {
-          replyText = isIncome 
-            ? `💰 *Balance added!* +£${formatVal(transactionData.amount)}\n\n`
-            : `💸 *Expense logged!* -£${formatVal(transactionData.amount)} ${emoji} (${categoryDisplay})\n\n`;
-          
-          replyText += `📊 *Summary:*\n` +
-              `• Today's spending: £${formatVal(totalDia)}\n` +
-              `• This month's spending: £${formatVal(totalMes)}\n` +
-              `• *Current Balance: £${formatVal(currentBalance)}*\n\n`;
-
-          // Budget Alert (80%)
-          if (userData.monthlyIncome > 0 && totalMes > 0.8 * userData.monthlyIncome) {
-             replyText += `⚠️ *BUDGET ALERT:* You've used over 80% of your income this month! Tread carefully. 🛑\n\n`;
-          }
-
-          replyText += `🔗 ${personalizedLink}`;
-        }
-        
-        await sendMessage(instance, sender, replyText);
-
-        // --- ONBOARDING TRIGGER: Ask about income if missing ---
-        if (!userData.monthlyIncome && !transactionData.monthlyIncome) {
-           const onboardingMsg = isBrazil
-            ? `Oi! Notei que ainda não sei qual sua renda mensal. *Qual seria sua renda mensal? Para adicionar ao seu dashboard?* 💰`
-            : `Hi! I noticed I don't know your monthly income yet. *What would your monthly income be? To add to your dashboard?* 💰`;
-          await sendMessage(instance, sender, onboardingMsg);
-        }
-
-      } catch (replyError) {
-        console.error('[Background] ⚠️ Failed to send WhatsApp reply:', replyError.message);
-      }
+    // --- RESPOND ---
+    if (source === 'whatsapp-evolution' && transactionData.response_message) {
+      // Re-calculate totals for the final message if needed, or use AI message
+      // The user wants to use the response_message from AI.
+      await sendMessage(instance, sender, transactionData.response_message);
     }
 
   } catch (error) {
