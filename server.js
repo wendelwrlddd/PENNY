@@ -152,7 +152,7 @@ async function processMessageBackground(text, sender, instance, source) {
 
     let transactionData = null;
     try {
-      transactionData = await extractFinancialData(text, aiState);
+      transactionData = await extractFinancialData(text, aiState, isBrazil);
     } catch (aiError) {
       console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
       if (source === 'whatsapp-evolution') {
