@@ -102,7 +102,6 @@ app.post('/api/sys/disarm', async (req, res) => {
 // Helper function to process message in background
 async function processMessageBackground(text, sender, instance, source) {
   try {
-  try {
     console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
 
     // --- WHITELIST CHECK ---
