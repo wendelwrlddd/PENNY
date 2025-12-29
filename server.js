@@ -143,11 +143,20 @@ async function processMessageBackground(text, sender, instance, source) {
     // Calculate current balance and totals for the AI
     const { totalIncome, totalExpenses, currentBalance } = await calculateUserTotals(userRef, isBrazil);
     
+    // Determine onboarding step
+    let onboarding_step = "ACTIVE";
+    if (!userData.monthlyIncome) {
+      // If we are in the middle of onboarding, AI might have told us last time
+      onboarding_step = userData.onboarding_step || "null";
+    } else if (userData.monthlyIncome && !userData.hasSyncedBalance) {
+      onboarding_step = "ASK_BALANCE";
+    }
+
     const aiState = {
       monthlyIncome: userData.monthlyIncome || null,
-      payDay: userData.payDay || null,
       currentBalance: currentBalance,
-      lastAction: userData.lastAction || 'none'
+      lastAction: userData.lastAction || 'none',
+      onboarding_step: onboarding_step
     };
 
     let transactionData = null;
@@ -175,12 +184,21 @@ async function processMessageBackground(text, sender, instance, source) {
     // --- EXECUTE AI DECISION ---
     console.log(`[Background] 🧠 Intent: ${transactionData.intent}`);
 
-    // Update last interaction and action
-    await userRef.set({ 
+    // Update user state
+    const updateData = { 
       lastInteraction: new Date().toISOString(),
       lastAction: transactionData.intent,
       updatedAt: new Date().toISOString()
-    }, { merge: true });
+    };
+
+    if (transactionData.next_question) {
+      updateData.onboarding_step = transactionData.next_question;
+    } else if (transactionData.intent === 'SET_CURRENT_BALANCE') {
+      updateData.onboarding_step = "ACTIVE";
+      updateData.hasSyncedBalance = true;
+    }
+
+    await userRef.set(updateData, { merge: true });
 
     if (transactionData.intent === 'SET_MONTHLY_INCOME') {
       const income = parseFloat(transactionData.monthly_income);
@@ -270,6 +288,11 @@ async function processMessageBackground(text, sender, instance, source) {
 
     if (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES') {
       const expenses = transactionData.expenses || [];
+      // Support the single amount/category if expenses array is empty
+      if (expenses.length === 0 && transactionData.amount) {
+        expenses.push({ amount: transactionData.amount, category: transactionData.category || 'General' });
+      }
+
       console.log(`[Background] 💸 Adding ${expenses.length} expenses...`);
       
       for (const exp of expenses) {
@@ -297,7 +320,9 @@ async function processMessageBackground(text, sender, instance, source) {
         monthlyIncome: admin.firestore.FieldValue.delete(),
         payDay: admin.firestore.FieldValue.delete(),
         lastProactivePrompt: admin.firestore.FieldValue.delete(),
-        lastAction: admin.firestore.FieldValue.delete()
+        lastAction: admin.firestore.FieldValue.delete(),
+        onboarding_step: admin.firestore.FieldValue.delete(),
+        hasSyncedBalance: admin.firestore.FieldValue.delete()
       });
       
       const txs = await userRef.collection('transactions').get();
