@@ -175,8 +175,8 @@ async function processMessageBackground(text, sender, instance, source) {
         // If we just got the income, ask for payday
         if (updates.monthlyIncome && !userData.payDay && !updates.payDay) {
           const paydayMsg = isBrazil
-            ? `✅ *Renda salva!* Agora, por favor, me informe o *dia do mês* que você costuma receber seu salário (ex: "dia 5", "todo dia 10").`
-            : `✅ *Income saved!* Now, please let me know the *date* you receive your monthly income (e.g., "the 5th", "every 10th").`;
+            ? `✅ *Renda salva!* Agora, por favor, me informe o *dia do mês* em que você costuma receber seu salário (ex: "dia 5", "todo dia 10").`
+            : `✅ *Income saved!* Now, please let me know the *date* you typically receive your monthly income (e.g., "the 5th", "every 10th").`;
           await sendMessage(instance, sender, paydayMsg);
           return;
         }
@@ -192,13 +192,13 @@ async function processMessageBackground(text, sender, instance, source) {
 
           if (syncNeeded) {
             const syncMsg = isBrazil
-              ? `✅ *Entendido!* Como o dia do seu pagamento (${finalPayDay}) já passou ou o mês já começou, quanto você acha que já gastou desde o recebimento da sua renda? Assim eu acerto seu saldo inicial! 📈`
-              : `✅ *Got it!* Since your payday (${finalPayDay}) has passed or the month has already started, how much do you think you've spent since receiving your income? This will help me set your initial balance! 📈`;
+              ? `✅ *Entendido!* Como o dia do seu pagamento (${finalPayDay}) já passou ou o mês já começou, qual é o seu *saldo atual*? Assim poderei atualizar seu dashboard e controlar tanto seus gastos quanto seu saldo daqui para frente. 📈`
+              : `✅ *Got it!* Since your payday (${finalPayDay}) has passed or the month has already started, what is your *current balance*? This will allow me to update your dashboard and help you track both your spending and balance moving forward. 📈`;
             await sendMessage(instance, sender, syncMsg);
           } else {
             const doneMsg = isBrazil
-              ? `✅ *Tudo pronto!* Seu perfil está configurado. Agora é só me mandar seus gastos diários! 🚀`
-              : `✅ *All set!* Your profile is configured. Now just send me your daily expenses! 🚀`;
+              ? `✅ *Tudo pronto!* Seu perfil foi configurado com sucesso. Agora, basta me enviar seus gastos diários para mantermos tudo sob controle! 🚀`
+              : `✅ *All set!* Your profile has been successfully configured. Now, simply send me your daily expenses, and I'll keep everything on track for you! 🚀`;
             await sendMessage(instance, sender, doneMsg);
           }
           return;
