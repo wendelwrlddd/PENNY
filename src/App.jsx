@@ -249,13 +249,15 @@ function App() {
   const categoriesMap = transactions
     .filter(tx => (tx.type === 'expense' || !tx.type) && tx.type !== 'error')
     .reduce((acc, tx) => {
-      // Normalização robusta: olha tanto chaves (EN) quanto valores (PT/EN)
-      const catInput = (tx.category || 'General').toLowerCase();
+      const catInput = (tx.category || 'General').toLowerCase().trim();
       
       const foundKey = Object.keys(translations.en.categories).find(key => {
         const enVal = translations.en.categories[key].toLowerCase();
         const ptVal = translations.pt.categories[key].toLowerCase();
-        return key.toLowerCase() === catInput || enVal === catInput || ptVal === catInput;
+        // Match English keys, English values, or Portuguese values
+        return key.toLowerCase() === catInput || enVal === catInput || ptVal === catInput || 
+               (key === 'Food' && (catInput === 'comida' || catInput === 'alimentacao')) ||
+               (key === 'Bills' && (catInput === 'contas' || catInput === 'pagamentos' || catInput === 'boleto'));
       }) || 'General';
       
       const translatedName = t.categories[foundKey];
@@ -263,19 +265,13 @@ function App() {
       return acc;
     }, {});
 
-  const getCategoryPercentage = (amount) => {
-    if (totalExpenses === 0) return 0;
-    return Math.round((amount / totalExpenses) * 100);
-  };
-
   // Categorias principais para exibir no dashboard (mesmo que vazias)
   const mainCategories = [
     { name: t.categories.Food, color: 'bg-orange-500' },
     { name: t.categories.Transport, color: 'bg-blue-500' },
     { name: t.categories.Shopping, color: 'bg-pink-500' },
     { name: t.categories.Leisure, color: 'bg-purple-500' },
-    { name: t.categories.Bills, color: 'bg-red-500' },
-    { name: t.categories.General, color: 'bg-gray-500' }
+    { name: t.categories.Bills, color: 'bg-red-500' }
   ];
 
   // 4. Atividade Semanal (Volume de transações por dia)
@@ -612,23 +608,13 @@ function App() {
                    <div className="w-full space-y-4">
                        {mainCategories.map((cat, i) => {
                          const amount = categoriesMap[cat.name] || 0;
-                         const percentage = getCategoryPercentage(amount);
                          return (
-                           <div key={i} className="flex flex-col gap-1">
-                             <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                   <div className={`w-3 h-3 rounded-full ${cat.color} shadow-[0_0_8px_currentColor]`}></div>
-                                   <span className="text-xs text-gray-400 font-medium">{cat.name}</span>
-                                </div>
-                                <div className="text-right flex flex-col items-end">
-                                   <span className="text-xs font-bold">{formatCurrency(amount)}</span>
-                                   <span className="text-[10px] text-primary/60 font-bold">{percentage}%</span>
-                                </div>
-                             </div>
-                             {/* Mini progress bar */}
-                             <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                                <div className={`h-full ${cat.color.replace('bg-', 'bg-opacity-50 bg-')}`} style={{ width: `${percentage}%`, backgroundColor: cat.color.includes('orange') ? '#f97316' : cat.color.includes('blue') ? '#3b82f6' : cat.color.includes('pink') ? '#ec4899' : cat.color.includes('purple') ? '#a855f7' : cat.color.includes('gray') ? '#6b7280' : '#ef4444' }}></div>
-                             </div>
+                           <div key={i} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                 <div className={`w-3 h-3 rounded-full ${cat.color} shadow-[0_0_8px_currentColor]`}></div>
+                                 <span className="text-xs text-gray-400 font-medium">{cat.name}</span>
+                              </div>
+                              <span className="text-xs font-bold">{formatCurrency(amount)}</span>
                            </div>
                          );
                        })}
