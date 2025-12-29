@@ -13,6 +13,12 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Update this list with authorized phone numbers (only digits)
+const ALLOWED_NUMBERS = [
+  '554498035109', // Authorized 2024-12-29
+  // Add other numbers here
+];
+
 app.use(cors());
 // --- NEW: Raw Body Middleware for Webhook ---
 // This allows us to see the original payload before Express parses it
@@ -96,7 +102,20 @@ app.post('/api/sys/disarm', async (req, res) => {
 // Helper function to process message in background
 async function processMessageBackground(text, sender, instance, source) {
   try {
+  try {
     console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
+
+    // --- WHITELIST CHECK ---
+    // Ensure sender contains only digits for comparison
+    const cleanSender = sender.replace(/\D/g, '');
+    const isAllowed = ALLOWED_NUMBERS.some(num => cleanSender.includes(num));
+
+    if (!isAllowed) {
+       console.log(`[Security] ⛔ Blocked unauthorized number: ${sender}`);
+       // Optional: Send a rejection message? 
+       // For now, silent block to avoid spam/costs.
+       return; 
+    }
 
     // 1. Detect Region
     const isBrazil = sender.startsWith('55');
