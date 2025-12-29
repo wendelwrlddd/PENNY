@@ -238,7 +238,7 @@ async function processMessageBackground(text, sender, instance, source) {
 
       // Detect if this is the onboarding sync (no adjustment recorded yet)
       const adjSnapshot = await userRef.collection('transactions')
-        .where('description', 'in', ['Ajuste Inicial', 'Initial Adjustment'])
+        .where('description', 'in', ['Ajuste Inicial', 'Initial Adjustment', 'Gasto Mensal (Sincronização)'])
         .limit(1)
         .get();
       
@@ -246,28 +246,66 @@ async function processMessageBackground(text, sender, instance, source) {
         isInitialSync = true;
       }
 
-      const diff = reportedBalance - oldBalance;
-      if (Math.abs(diff) > 0.01) {
+      if (isInitialSync) {
+        console.log(`[Background] 🧼 Cleaning slate for initial sync...`);
+        // 1. Mark previous transactions of THIS MONTH as error (except the Income one)
+        const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
+        const now = new Date();
+        const monthStr = now.toLocaleDateString('en-CA', { timeZone: tz }).substring(0, 7);
+        
+        const txs = await userRef.collection('transactions').get();
+        const batch = db.batch();
+        txs.forEach(doc => {
+          const data = doc.data();
+          const created = new Date(data.createdAt || data.date);
+          const createdMonthStr = created.toLocaleDateString('en-CA', { timeZone: tz }).substring(0, 7);
+          
+          // If it's this month AND NOT the Income record we just created
+          if (createdMonthStr === monthStr && 
+              !data.description.includes('Renda Mensal') && 
+              !data.description.includes('Monthly Income') &&
+              data.type !== 'error') {
+            batch.update(doc.ref, { type: 'error' });
+          }
+        });
+        await batch.commit();
+
+        // 2. Calculate Strict Gasto: Income - Balance
+        initialSpending = (userData.monthlyIncome || 0) - reportedBalance;
+        
+        // 3. Record ONE single gasto transaction
         await userRef.collection('transactions').add({
-          amount: Math.abs(diff),
-          type: diff > 0 ? 'income' : 'expense',
+          amount: Math.max(0, initialSpending),
+          type: 'expense',
           category: 'General',
-          description: isBrazil ? 'Ajuste Inicial' : 'Initial Adjustment',
+          description: isBrazil ? 'Gasto Mensal (Sincronização)' : 'Monthly Spend (Sync)',
           createdAt: new Date().toISOString(),
           intent: 'RECORD'
         });
+
+      } else {
+        const diff = reportedBalance - oldBalance;
+        if (Math.abs(diff) > 0.01) {
+          await userRef.collection('transactions').add({
+            amount: Math.abs(diff),
+            type: diff > 0 ? 'income' : 'expense',
+            category: 'General',
+            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Adjustment',
+            createdAt: new Date().toISOString(),
+            intent: 'RECORD'
+          });
+        }
       }
 
       if (source === 'whatsapp-evolution') {
-        // Recalculate everything after the adjustment to show accurate totals
         const { totalMes: finalTotalMes } = await calculateUserTotals(userRef, isBrazil);
         const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
         let syncReply = "";
 
         if (isInitialSync) {
           syncReply = isBrazil
-            ? `🔄 *Saldo atualizado!* Como sua renda é de R$${formatVal(userData.monthlyIncome)} e seu saldo atual é R$${formatVal(reportedBalance)}, identifiquei que você já gastou aproximadamente *R$${formatVal(finalTotalMes)}* antes de começar a usar o Penny. 📈\n\nAgora que seu perfil está completo, vou te ajudar a controlar cada centavo! 🚀`
-            : `🔄 *Balance updated!* Since your income is £${formatVal(userData.monthlyIncome)} and your current balance is £${formatVal(reportedBalance)}, I've identified that you spent approximately *£${formatVal(finalTotalMes)}* before starting with Penny. 📈\n\nNow that your profile is complete, I'll help you track every penny! 🚀`;
+            ? `🔄 *Saldo atualizado!* Como sua renda é de R$${formatVal(userData.monthlyIncome)} e seu saldo atual é R$${formatVal(reportedBalance)}, registrei um gasto de *R$${formatVal(initialSpending)}* para bater com suas contas. 📈\n\nAgora seu dashboard está sincronizado e pronto! 🚀`
+            : `🔄 *Balance updated!* Since your income is £${formatVal(userData.monthlyIncome)} and your current balance is £${formatVal(reportedBalance)}, I've recorded a spending of *£${formatVal(initialSpending)}* to match your records. 📈\n\nYour dashboard is now synced and ready! 🚀`;
         } else {
           syncReply = isBrazil
             ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
