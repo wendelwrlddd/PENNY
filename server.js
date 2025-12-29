@@ -248,7 +248,6 @@ async function processMessageBackground(text, sender, instance, source) {
 
       const diff = reportedBalance - oldBalance;
       if (Math.abs(diff) > 0.01) {
-        initialSpending = Math.abs(diff);
         await userRef.collection('transactions').add({
           amount: Math.abs(diff),
           type: diff > 0 ? 'income' : 'expense',
@@ -260,13 +259,15 @@ async function processMessageBackground(text, sender, instance, source) {
       }
 
       if (source === 'whatsapp-evolution') {
+        // Recalculate everything after the adjustment to show accurate totals
+        const { totalMes: finalTotalMes } = await calculateUserTotals(userRef, isBrazil);
         const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
         let syncReply = "";
 
         if (isInitialSync) {
           syncReply = isBrazil
-            ? `🔄 *Saldo atualizado!* Como sua renda é de R$${formatVal(userData.monthlyIncome)} e seu saldo atual é R$${formatVal(reportedBalance)}, identifiquei que você já gastou aproximadamente *R$${formatVal(initialSpending)}* antes de começar a usar o Penny. 📈\n\nAgora que seu perfil está completo, vou te ajudar a controlar cada centavo! 🚀`
-            : `🔄 *Balance updated!* Since your income is £${formatVal(userData.monthlyIncome)} and your current balance is £${formatVal(reportedBalance)}, I've identified that you spent approximately *£${formatVal(initialSpending)}* before starting with Penny. 📈\n\nNow that your profile is complete, I'll help you track every penny! 🚀`;
+            ? `🔄 *Saldo atualizado!* Como sua renda é de R$${formatVal(userData.monthlyIncome)} e seu saldo atual é R$${formatVal(reportedBalance)}, identifiquei que você já gastou aproximadamente *R$${formatVal(finalTotalMes)}* antes de começar a usar o Penny. 📈\n\nAgora que seu perfil está completo, vou te ajudar a controlar cada centavo! 🚀`
+            : `🔄 *Balance updated!* Since your income is £${formatVal(userData.monthlyIncome)} and your current balance is £${formatVal(reportedBalance)}, I've identified that you spent approximately *£${formatVal(finalTotalMes)}* before starting with Penny. 📈\n\nNow that your profile is complete, I'll help you track every penny! 🚀`;
         } else {
           syncReply = isBrazil
             ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
