@@ -164,6 +164,28 @@ async function processMessageBackground(text, sender, instance, source) {
       updatedAt: new Date().toISOString()
     }, { merge: true });
 
+    // --- SAFEGUARD: Detect Onboarding Step 3 (Balance) masquerading as PROFILE_UPDATE ---
+    // If we have Income & PayDay, but NO "Initial Adjustment" transaction yet,
+    // and the user sends a number, it is almost certainly the Initial Balance (SYNC).
+    if (transactionData.intent === 'PROFILE_UPDATE' || transactionData.intent === 'RECORD') {
+       if (userData.monthlyIncome && userData.payDay) {
+          const adjCheck = await userRef.collection('transactions')
+            .where('description', 'in', ['Ajuste Inicial', 'Initial Adjustment', 'Gasto Mensal (Sincronização)'])
+            .limit(1)
+            .get();
+          
+          if (adjCheck.empty) {
+             console.log('[Background] 🛡️ Safeguard: Forcing SYNC for valid onboarding balance response.');
+             transactionData.intent = 'SYNC';
+             // Ensure amount is parsed if it was classified as payDay erroneously
+             if (!transactionData.amount && transactionData.payDay && transactionData.payDay > 31) {
+                transactionData.amount = transactionData.payDay;
+                transactionData.payDay = null;
+             }
+          }
+       }
+    }
+
     // --- ONBOARDING LOGIC & PROFILE UPDATES ---
     if (transactionData.intent === 'PROFILE_UPDATE') {
       console.log(`[Background] 👤 Updating profile for ${sender}...`);
