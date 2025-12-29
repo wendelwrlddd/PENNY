@@ -216,9 +216,13 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'SYNC') {
       console.log(`[Background] 🔄 Syncing balance for ${sender}...`);
       const reportedBalance = parseFloat(transactionData.amount);
-      const { totalIncome, currentBalance } = await calculateUserTotals(userRef, isBrazil);
+      const { totalIncome, currentBalance: oldBalance } = await calculateUserTotals(userRef, isBrazil);
       
+      let initialSpending = 0;
+      let isInitialSync = false;
+
       if (totalIncome === 0 && (userData.monthlyIncome || 0) > 0) {
+        isInitialSync = true;
         console.log(`[Background] 💰 Adding monthly income (R$${userData.monthlyIncome}) before sync.`);
         await userRef.collection('transactions').add({
           amount: userData.monthlyIncome,
@@ -233,8 +237,9 @@ async function processMessageBackground(text, sender, instance, source) {
         const diff = reportedBalance - refreshed.currentBalance;
         
         if (Math.abs(diff) > 0.01) {
+          initialSpending = Math.abs(diff);
           await userRef.collection('transactions').add({
-            amount: Math.abs(diff),
+            amount: initialSpending,
             type: diff > 0 ? 'income' : 'expense',
             category: 'General',
             description: isBrazil ? 'Ajuste Inicial' : 'Initial Adjustment',
@@ -243,7 +248,7 @@ async function processMessageBackground(text, sender, instance, source) {
           });
         }
       } else {
-        const diff = reportedBalance - currentBalance;
+        const diff = reportedBalance - oldBalance;
         if (Math.abs(diff) > 0.01) {
           await userRef.collection('transactions').add({
             amount: Math.abs(diff),
@@ -257,9 +262,18 @@ async function processMessageBackground(text, sender, instance, source) {
       }
 
       if (source === 'whatsapp-evolution') {
-        const syncReply = isBrazil
-          ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
-          : `🔄 *Balance synced!* I've updated your record to match the £${reportedBalance.toFixed(2)} in your account. All set! 😉`;
+        const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
+        let syncReply = "";
+
+        if (isInitialSync) {
+          syncReply = isBrazil
+            ? `🔄 *Saldo atualizado!* Como sua renda é de R$${formatVal(userData.monthlyIncome)} e seu saldo atual é R$${formatVal(reportedBalance)}, identifiquei que você já gastou aproximadamente *R$${formatVal(initialSpending)}* antes de começar a usar o Penny. 📈\n\nAgora que seu perfil está completo, vou te ajudar a controlar cada centavo! 🚀`
+            : `🔄 *Balance updated!* Since your income is £${formatVal(userData.monthlyIncome)} and your current balance is £${formatVal(reportedBalance)}, I've identified that you spent approximately *£${formatVal(initialSpending)}* before starting with Penny. 📈\n\nNow that your profile is complete, I'll help you track every penny! 🚀`;
+        } else {
+          syncReply = isBrazil
+            ? `🔄 *Saldo sincronizado!* Agora entendi que você tem R$${reportedBalance.toFixed(2)} na conta. Ajustei aqui para bater com seu banco! 😉`
+            : `🔄 *Balance synced!* I've updated your record to match the £${reportedBalance.toFixed(2)} in your account. All set! 😉`;
+        }
         await sendMessage(instance, sender, syncReply);
       }
       return;
