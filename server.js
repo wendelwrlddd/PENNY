@@ -154,6 +154,9 @@ async function processMessageBackground(text, sender, instance, source) {
 
     const aiState = {
       monthlyIncome: userData.monthlyIncome || null,
+      hourlyRate: userData.hourlyRate || null,
+      weeklyHours: userData.weeklyHours || null,
+      payFrequency: userData.payFrequency || null,
       currentBalance: currentBalance,
       totalToday: totalDia,
       totalMonth: totalMes,
@@ -203,10 +206,59 @@ async function processMessageBackground(text, sender, instance, source) {
 
     await userRef.set(updateData, { merge: true });
 
+    if (transactionData.intent === 'SET_INCOME_TYPE') {
+      const incomeType = transactionData.income_type;
+      console.log(`[Background] 💼 Setting income type: ${incomeType}`);
+      await userRef.update({ incomeType });
+    }
+
+    if (transactionData.intent === 'SET_HOURLY_RATE') {
+      const rate = parseFloat(transactionData.hourly_rate);
+      console.log(`[Background] 💸 Setting hourly rate: ${rate}`);
+      await userRef.update({ hourlyRate: rate });
+    }
+
+    if (transactionData.intent === 'SET_WEEKLY_HOURS') {
+      const hours = parseFloat(transactionData.weekly_hours);
+      console.log(`[Background] 🕒 Setting weekly hours: ${hours}`);
+      
+      const hourlyRate = userData.hourlyRate || transactionData.hourly_rate || 0;
+      const weeklyIncome = hourlyRate * hours;
+      const monthlyIncome = weeklyIncome * 4.33;
+
+      await userRef.update({ 
+        weeklyHours: hours,
+        estimatedWeeklyIncome: weeklyIncome,
+        monthlyIncome: monthlyIncome // Use estimate as base for onboarding logic
+      });
+    }
+
+    if (transactionData.intent === 'SET_PAY_FREQUENCY') {
+      const frequency = transactionData.pay_frequency;
+      console.log(`[Background] 📅 Setting pay frequency: ${frequency}`);
+      await userRef.update({ payFrequency: frequency });
+    }
+
+    if (transactionData.intent === 'SET_WEEKLY_HOURS_OVERRIDE') {
+        const hours = parseFloat(transactionData.weekly_hours);
+        console.log(`[Background] 🕒 Setting weekly hours override: ${hours}`);
+        await userRef.update({ currentWeekHoursOverride: hours });
+    }
+
+    if (transactionData.intent === 'SET_PAYDAY_TODAY') {
+        const now = new Date();
+        const nextDate = calculateNextPayDate(now, userData.payFrequency || 'monthly');
+        console.log(`[Background] 💰 Payday recorded today. Next estimated: ${nextDate.toISOString()}`);
+        await userRef.update({ 
+            lastPayDate: now.toISOString(),
+            nextEstimatedPayDate: nextDate.toISOString()
+        });
+    }
+
     if (transactionData.intent === 'SET_MONTHLY_INCOME') {
       const income = parseFloat(transactionData.monthly_income);
       console.log(`[Background] 💰 Setting monthly income: ${income}`);
-      await userRef.update({ monthlyIncome: income });
+      await userRef.update({ monthlyIncome: income, incomeType: 'monthly' });
       
       // Also record as a transaction to update balance
       await userRef.collection('transactions').add({
@@ -337,6 +389,19 @@ async function processMessageBackground(text, sender, instance, source) {
           : `🗑️ *Profile reset!* I've cleared your data and history. You're a new user now! 😉`;
         await sendMessage(instance, sender, reply);
       }
+    }
+
+    // --- LOW BALANCE ANXIETY MODE ---
+    if (!isBrazil && transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES') {
+        const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil);
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        if (newBalance < 50 && userData.lastLowBalanceAlertDate !== todayStr) {
+            console.log(`[Security] ⚠️ Low balance alert for ${sender}: £${newBalance}`);
+            const alertMsg = "⚠️ Your balance is getting low (£" + newBalance.toFixed(2) + "). Might be worth taking it easy today.";
+            await sendMessage(instance, sender, alertMsg);
+            await userRef.update({ lastLowBalanceAlertDate: todayStr });
+        }
     }
 
     // --- RESPOND ---
@@ -567,7 +632,6 @@ cron.schedule('0 0 * * *', async () => {
   console.log('🕒 [Cron] Running daily night report (00:00)...');
   try {
     const now = new Date();
-    // Use last 24h as activity filter
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60000).toISOString();
     const usersSnapshot = await db.collection('usuarios')
       .where('lastInteraction', '>', twentyFourHoursAgo)
@@ -605,13 +669,289 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
+// --- UK SPECIALIZED REPORTS ---
+
+// Payday Reminders (Daily 09:00)
+cron.schedule('0 9 * * *', async () => {
+    console.log('🕒 [Cron] Running UK Payday Reminders (09:00)...');
+    try {
+        const usersSnapshot = await db.collection('usuarios').get();
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        
+        for (const doc of usersSnapshot.docs) {
+            const userData = doc.data();
+            if (!userData.features?.ukMode) continue;
+            if (userData.onboarding_step !== 'ACTIVE') continue;
+
+            const nextPayDate = userData.nextEstimatedPayDate ? new Date(userData.nextEstimatedPayDate) : null;
+            if (!nextPayDate) continue;
+
+            const nextPayStr = nextPayDate.toISOString().split('T')[0];
+            const diffDays = Math.ceil((nextPayDate - now) / (1000 * 60 * 60 * 24));
+
+            if (todayStr === nextPayStr) {
+                await sendMessage(userData.instance || 'penny-instance', doc.id, "💰 *Today looks like payday.*");
+            } else if (diffDays === 2) {
+                await sendMessage(userData.instance || 'penny-instance', doc.id, "📅 *2 days to payday.*");
+            }
+        }
+    } catch (err) {
+        console.error('[Cron] Payday Reminder Error:', err.message);
+    }
+});
+
+// Weekly Reset & Baseline Update (Monday 00:00)
+cron.schedule('0 0 * * 1', async () => {
+    console.log('🕒 [Cron] Running UK Weekly Reset (00:00)...');
+    try {
+        const usersSnapshot = await db.collection('usuarios').get();
+        for (const doc of usersSnapshot.docs) {
+            const userData = doc.data();
+            if (!userData.features?.ukMode) continue;
+
+            // Reset flex hours
+            const updates = { currentWeekHoursOverride: admin.firestore.FieldValue.delete() };
+
+            // Update average spending (last 4 weeks)
+            const { start } = getLastFourWeeksRange();
+            const { totalRange } = await calculateRangeTotals(doc.ref, start, new Date().toISOString());
+            const avg = totalRange / 4;
+            updates.weeklySpendingAverage = avg;
+
+            await doc.ref.update(updates);
+            console.log(`[Cron] Reset/Avg updated for ${doc.id}`);
+        }
+    } catch (err) {
+        console.error('[Cron] Monday Reset Error:', err.message);
+    }
+});
+
+// Weekly Retrospective (Monday 08:00)
+cron.schedule('0 8 * * 1', async () => {
+    console.log('🕒 [Cron] Running UK Monday Retrospective (08:00)...');
+    try {
+        const usersSnapshot = await db.collection('usuarios').get();
+        const now = new Date();
+        const weekNum = getWeekNumber(now);
+        const yearWeek = `${now.getFullYear()}-${weekNum}`;
+
+        for (const doc of usersSnapshot.docs) {
+            const userData = doc.data();
+            const sender = doc.id;
+            if (!userData.features?.ukMode) continue;
+            if (userData.onboarding_step !== 'ACTIVE') continue;
+            if (userData.lastWeeklyReportDate === yearWeek) continue;
+
+            const { start, end } = getPreviousWeekRange();
+            const totals = await calculateRangeTotals(doc.ref, start, end);
+            
+            if (totals.totalRange > 0) {
+                const reportMsg = `📅 *Weekly Recap*\n\n` +
+                    `Last week you spent £${totals.totalRange.toFixed(2)}.\n` +
+                    `Your biggest expense was ${totals.topCategory || 'Others'} (£${totals.topCategoryAmount.toFixed(2)}).`;
+                
+                await sendMessage(userData.instance || 'penny-instance', sender, reportMsg);
+                await doc.ref.update({ lastWeeklyReportDate: yearWeek });
+            }
+        }
+    } catch (err) {
+        console.error('[Cron] Monday Report Error:', err.message);
+    }
+});
+
+// Spending Alert (Friday 17:00)
+cron.schedule('0 17 * * 5', async () => {
+    console.log('🕒 [Cron] Running UK Friday Heads-up (17:00)...');
+    try {
+        const usersSnapshot = await db.collection('usuarios').get();
+        for (const doc of usersSnapshot.docs) {
+            const userData = doc.data();
+            const sender = doc.id;
+            if (!userData.features?.ukMode) continue;
+            if (userData.onboarding_step !== 'ACTIVE') continue;
+
+            // Baseline check
+            const avg = userData.weeklySpendingAverage || 0;
+            const { start, end } = getCurrentWeekToNowRange();
+            const { totalRange } = await calculateRangeTotals(doc.ref, start, end);
+
+            // Only alert if > 20% above average (if avg exists) or > limit
+            const limit = userData.estimatedWeeklyIncome || (userData.monthlyIncome / 4.33) || null;
+            
+            let shouldAlert = false;
+            if (avg > 0 && totalRange > avg * 1.2) shouldAlert = true;
+            else if (limit && totalRange > limit * 0.8) shouldAlert = true;
+
+            if (shouldAlert) {
+                const alertMsg = "🚨 *Spending Alert*\n\n" +
+                    `You're spending more than usual this week (£${totalRange.toFixed(2)}). Just a heads-up before the weekend.`;
+                await sendMessage(userData.instance || 'penny-instance', sender, alertMsg);
+            }
+        }
+    } catch (err) {
+        console.error('[Cron] Friday Report Error:', err.message);
+    }
+});
+
+// Sunday Budget Close (Sunday 20:00)
+cron.schedule('0 20 * * 0', async () => {
+    console.log('🕒 [Cron] Running UK Sunday Close (20:00)...');
+    try {
+        const usersSnapshot = await db.collection('usuarios').get();
+        const now = new Date();
+        const weekNum = getWeekNumber(now);
+        const yearWeek = `${now.getFullYear()}-${weekNum}`;
+
+        for (const doc of usersSnapshot.docs) {
+            const userData = doc.data();
+            const sender = doc.id;
+            if (!userData.features?.ukMode) continue;
+            if (userData.onboarding_step !== 'ACTIVE') continue;
+
+            const hourlyRate = userData.hourlyRate || 0;
+            const effectiveHours = userData.currentWeekHoursOverride || userData.weeklyHours || 0;
+            const weeklyIncome = hourlyRate * effectiveHours || (userData.monthlyIncome / 4.33) || 0;
+
+            if (weeklyIncome <= 0) continue;
+
+            const { start, end } = getCurrentWeekToNowRange();
+            const { totalRange } = await calculateRangeTotals(doc.ref, start, end);
+            const percent = (totalRange / weeklyIncome) * 100;
+
+            let reportMsg = `📊 *Weekly Close*\n\n` +
+                `You've used ${percent.toFixed(1)}% of your weekly budget.`;
+            
+            // Micro Feedback Positivo
+            if (percent < 70 && userData.lastPositiveFeedbackWeek !== yearWeek) {
+                reportMsg += "\n\n🌟 You stayed well within your budget this week.";
+                await doc.ref.update({ lastPositiveFeedbackWeek: yearWeek });
+            }
+
+            await sendMessage(userData.instance || 'penny-instance', sender, reportMsg);
+        }
+    } catch (err) {
+        console.error('[Cron] Sunday Report Error:', err.message);
+    }
+});
+
+// --- HELPERS ---
+
+function getWeekNumber(d) {
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return weekNo;
+}
+
+function getPreviousWeekRange() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - now.getDay() - 6); // Previous Monday
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6); // Previous Sunday
+    end.setHours(23, 59, 59, 999);
+    return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function getCurrentWeekToNowRange() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1)); // Current Monday
+    start.setHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end: now.toISOString() };
+}
+
+async function calculateRangeTotals(userRef, start, end) {
+    const snapshot = await userRef.collection('transactions')
+        .where('createdAt', '>=', start)
+        .where('createdAt', '<=', end)
+        .get();
+
+    let totalRange = 0;
+    const categories = {};
+
+    snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.type === 'expense') {
+            const amt = parseFloat(data.amount || 0);
+            totalRange += amt;
+            const cat = data.category || 'Others';
+            categories[cat] = (categories[cat] || 0) + amt;
+        }
+    });
+
+    let topCategory = '';
+    let topCategoryAmount = 0;
+    for (const [cat, amt] of Object.entries(categories)) {
+        if (amt > topCategoryAmount) {
+            topCategory = cat;
+            topCategoryAmount = amt;
+        }
+    }
+
+    return { totalRange, topCategory, topCategoryAmount };
+}
+
+function getLastFourWeeksRange() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - 28);
+    start.setHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end: now.toISOString() };
+}
+
+function calculateNextPayDate(lastPay, frequency) {
+    const date = new Date(lastPay);
+    switch (frequency) {
+        case 'weekly':
+            date.setDate(date.getDate() + 7);
+            break;
+        case 'biweekly':
+            date.setDate(date.getDate() + 14);
+            break;
+        case 'four_weekly':
+            date.setDate(date.getDate() + 28);
+            break;
+        case 'monthly':
+        default:
+            date.setMonth(date.getMonth() + 1);
+            break;
+    }
+    return date;
+}
+
 // Start Server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
   console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   
+  // Migration for UK users
+  await runMigration();
+
   // Initial run in 10 seconds to not block startup
   setTimeout(checkProactiveMessages, 10000);
 });
+
+async function runMigration() {
+    console.log('🛠️ [Migration] Checking for users to upgrade to UK Mode...');
+    try {
+        const usersSnapshot = await db.collection('usuarios').get();
+        let upgradeCount = 0;
+        for (const doc of usersSnapshot.docs) {
+            const userData = doc.data();
+            const sender = doc.id;
+            if (!sender.startsWith('55') && !userData.features?.ukMode) {
+                await doc.ref.update({ 'features.ukMode': true });
+                upgradeCount++;
+            }
+        }
+        if (upgradeCount > 0) console.log(`✅ [Migration] Upgraded ${upgradeCount} users to UK Mode.`);
+    } catch (err) {
+        console.error('❌ [Migration] Error:', err.message);
+    }
+}
