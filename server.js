@@ -232,8 +232,8 @@ async function processMessageBackground(text, sender, instance, source) {
         await userRef.collection('transactions').add({
           amount: parseFloat(transactionData.balance_change),
           type: 'income',
-          category: 'Surplus',
-          description: isBrazil ? 'Ajuste de Saldo (Sobra)' : 'Balance Sync (Surplus)',
+          category: isBrazil ? '💰 Sobra Inicial' : '💰 Initial Savings',
+          description: isBrazil ? 'Ajuste de Saldo (Sobra)' : 'Initial Balance Adjustment (Surplus)',
           createdAt: new Date().toISOString(),
           intent: 'SET_CURRENT_BALANCE'
         });
@@ -241,19 +241,13 @@ async function processMessageBackground(text, sender, instance, source) {
         // CASE 1: Adjustment expense logic
         let adjustment = transactionData.adjustment_expense;
         
-        // If AI didn't calculate it for some reason, calculate it here if income exists
-        if (adjustment === null && aiState.monthlyIncome) {
-           const informedBalance = parseFloat(text.replace(/\D/g, '')) || 0; // Backup extraction
-           adjustment = aiState.monthlyIncome - informedBalance;
-        }
-
         if (adjustment !== null) {
           // Record adjustment as an expense
           await userRef.collection('transactions').add({
             amount: Math.max(0, adjustment),
             type: 'expense',
-            category: 'General',
-            description: isBrazil ? 'Ajuste de Saldo' : 'Balance Sync',
+            category: isBrazil ? '💸 Ajuste Inicial' : '💸 Initial Adjustment',
+            description: isBrazil ? 'Gastos Anteriores (Ajuste)' : 'Previous Expenses (Adjustment)',
             createdAt: new Date().toISOString(),
             intent: 'SET_CURRENT_BALANCE'
           });
