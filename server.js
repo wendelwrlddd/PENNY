@@ -181,7 +181,8 @@ async function processMessageBackground(text, sender, instance, source) {
     console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
     
     // Calculate current balance and totals for the AI
-    const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
+    const totals = await calculateUserTotals(userRef, isBrazil, userData);
+    const { totalDia, totalMes, currentBalance } = totals;
     
     // --- DETERMINISTIC STATE MACHINE (v4) ---
     const determineCurrentStep = (data) => {
@@ -210,8 +211,11 @@ async function processMessageBackground(text, sender, instance, source) {
       currentBalance: currentBalance,
       totalToday: totalDia,
       totalMonth: totalMes,
+      totalWeek: totals.totalSemana,
+      healthRatioMonth: totals.healthRatioMonth,
+      healthRatioWeek: totals.healthRatioWeek,
       lastAction: userData.lastAction || 'none',
-      onboardingStep: currentStep, // Pass the backend-calculated step
+      onboardingStep: currentStep, 
       dashboard_link: `https://penny-finance.vercel.app/?user=${sender}`
     };
 
@@ -447,7 +451,7 @@ async function processMessageBackground(text, sender, instance, source) {
     // --- LOW BALANCE ANXIETY MODE ---
     // Only trigger if onboarding is complete and it's an expense
     if (userData.onboarding_complete && !isBrazil && (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES')) {
-        const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil);
+        const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil, userData);
         const todayStr = new Date().toISOString().split('T')[0];
         
         if (newBalance < 50 && userData.lastLowBalanceAlertDate !== todayStr) {
@@ -473,7 +477,7 @@ async function processMessageBackground(text, sender, instance, source) {
 /**
  * Helper to calculate user totals for messages
  */
-async function calculateUserTotals(userRef, isBrazil) {
+async function calculateUserTotals(userRef, isBrazil, userData = {}) {
   const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });
@@ -505,12 +509,40 @@ async function calculateUserTotals(userRef, isBrazil) {
     }
   });
 
+  // --- PACE METRICS (v5) ---
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const monthProgress = dayOfMonth / daysInMonth;
+  
+  // Weekly progress
+  const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // 1=Mon, 7=Sun
+  const weekProgress = dayOfWeek / 7;
+
+  const monthlyIncome = userData.monthlyIncome || 0;
+  const weeklyIncome = userData.estimatedWeeklyIncome || (monthlyIncome / 4.33) || 0;
+
+  // Expected vs Actual (Monthly)
+  const expectedMonthlySoFar = monthlyIncome * monthProgress;
+  const healthRatioMonth = expectedMonthlySoFar > 0 ? (totalMes / expectedMonthlySoFar) : 0;
+
+  // Expected vs Actual (Weekly) - Using current week totals
+  const { totalRange: totalSemana } = await calculateRangeTotals(userRef, getCurrentWeekToNowRange().start, getCurrentWeekToNowRange().end);
+  const expectedWeeklySoFar = weeklyIncome * weekProgress;
+  const healthRatioWeek = expectedWeeklySoFar > 0 ? (totalSemana / expectedWeeklySoFar) : 0;
+
   return {
     totalDia,
     totalMes,
+    totalSemana,
     totalIncome,
     totalExpenses,
-    currentBalance: totalIncome - totalExpenses
+    currentBalance: totalIncome - totalExpenses,
+    monthProgress,
+    weekProgress,
+    healthRatioMonth,
+    healthRatioWeek,
+    statusMonth: healthRatioMonth <= 0.9 ? 'EXCELLENT' : healthRatioMonth <= 1.05 ? 'NORMAL' : healthRatioMonth <= 1.25 ? 'ATTENTION' : 'RISK',
+    statusWeek: healthRatioWeek <= 0.9 ? 'EXCELLENT' : healthRatioWeek <= 1.05 ? 'NORMAL' : healthRatioWeek <= 1.25 ? 'ATTENTION' : 'RISK'
   };
 }
 
@@ -681,22 +713,32 @@ cron.schedule('0 0 * * *', async () => {
       const isBrazil = sender.startsWith('55');
       const instance = userData.instance || 'penny-instance';
 
-      const { totalDia, totalMes, currentBalance } = await calculateUserTotals(doc.ref, isBrazil);
+      const totals = await calculateUserTotals(doc.ref, isBrazil, userData);
+      const { totalDia, totalMes, currentBalance, healthRatioMonth, healthRatioWeek, statusMonth, statusWeek } = totals;
       const formatVal = (val) => val.toLocaleString(isBrazil ? 'pt-BR' : 'en-GB', { minimumFractionDigits: 2 });
       
       let reportMsg = "";
+      const paceMessage = (ratio, isBr) => {
+          if (ratio <= 0.9) return isBr ? "Você está gastando abaixo do esperado 👍" : "You’re spending below expectation 👍";
+          if (ratio <= 1.05) return isBr ? "Seus gastos estão dentro do planejado." : "You’re on track.";
+          if (ratio <= 1.25) return isBr ? "Atenção: Você está gastando mais rápido que o esperado." : "Attention: You’re spending faster than expected.";
+          return isBr ? "Risco: Seus gastos estão acima do limite para este momento do mês." : "Risk: You’re overspending for this point in the month.";
+      };
+
       if (isBrazil) {
         reportMsg = `🌙 *Resumo do Dia - Penny*\n\n` +
-          `Hoje você gastou: *R$${formatVal(totalDia)}*\n` +
-          `Total no mês: R$${formatVal(totalMes)}\n` +
+          `Hoje: *R$${formatVal(totalDia)}*\n` +
+          `No Mês: R$${formatVal(totalMes)}\n` +
+          `Status: ${paceMessage(healthRatioMonth, true)}\n` +
           `Saldo atual: *R$${formatVal(currentBalance)}*\n\n` +
-          `Tenha uma ótima noite! Amanhã estarei aqui para registrar seus novos gastos. 😴`;
+          `Tenha uma ótima noite! 😴`;
       } else {
         reportMsg = `🌙 *Daily Summary - Penny*\n\n` +
-          `Today's spending: *£${formatVal(totalDia)}*\n` +
-          `Total this month: £${formatVal(totalMes)}\n` +
-          `Current balance: *£${formatVal(currentBalance)}*\n\n` +
-          `Have a great night! I'll be here tomorrow to track your new expenses. 😴`;
+          `Today: *£${formatVal(totalDia)}*\n` +
+          `Weekly Total: £${formatVal(totalSemana)}\n` +
+          `Pace: ${paceMessage(healthRatioWeek, false)}\n` +
+          `Balance: *£${formatVal(currentBalance)}*\n\n` +
+          `Have a great night! 😴`;
       }
 
       await sendMessage(instance, sender, reportMsg);
@@ -847,22 +889,21 @@ cron.schedule('0 20 * * 0', async () => {
             if (!userData.features?.ukMode) continue;
             if (userData.onboarding_step !== 'ACTIVE') continue;
 
-            const hourlyRate = userData.hourlyRate || 0;
-            const effectiveHours = userData.currentWeekHoursOverride || userData.weeklyHours || 0;
-            const weeklyIncome = hourlyRate * effectiveHours || (userData.monthlyIncome / 4.33) || 0;
+            const totals = await calculateUserTotals(doc.ref, false, userData);
+            const { healthRatioWeek, totalSemana } = totals;
 
-            if (weeklyIncome <= 0) continue;
-
-            const { start, end } = getCurrentWeekToNowRange();
-            const { totalRange } = await calculateRangeTotals(doc.ref, start, end);
-            const percent = (totalRange / weeklyIncome) * 100;
-
-            let reportMsg = `📊 *Weekly Close*\n\n` +
-                `You've used ${percent.toFixed(1)}% of your weekly budget.`;
+            let reportMsg = `📊 *Weekly Close*\n\n`;
+            
+            if (healthRatioWeek <= 1.0) {
+                reportMsg += `Excllent! You stayed within your budget this week (£${totalSemana.toFixed(2)}).`;
+            } else {
+                const overPercent = ((healthRatioWeek - 1) * 100).toFixed(0);
+                reportMsg += `You've spent *${overPercent}% more* than expected for this week (£${totalSemana.toFixed(2)}).`;
+            }
             
             // Micro Feedback Positivo
-            if (percent < 70 && userData.lastPositiveFeedbackWeek !== yearWeek) {
-                reportMsg += "\n\n🌟 You stayed well within your budget this week.";
+            if (healthRatioWeek < 0.8 && userData.lastPositiveFeedbackWeek !== yearWeek) {
+                reportMsg += "\n\n🌟 Great job maintaining a healthy spending pace!";
                 await doc.ref.update({ lastPositiveFeedbackWeek: yearWeek });
             }
 
