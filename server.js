@@ -202,59 +202,50 @@ async function processMessageBackground(text, sender, instance, source) {
     // --- EXECUTE AI DECISION ---
     console.log(`[Background] 🧠 Intent: ${transactionData.intent}`);
 
-    // Update user state
+    // Update user state (General Interaction)
     const updateData = { 
       lastInteraction: new Date().toISOString(),
       lastAction: transactionData.intent,
       updatedAt: new Date().toISOString()
     };
 
+    // Global Onboarding Step Update from AI
     if (transactionData.next_question) {
+      console.log(`[Background] ➡️ Advancing onboarding step to: ${transactionData.next_question}`);
       updateData.onboarding_step = transactionData.next_question;
-    } else if (transactionData.intent === 'SET_CURRENT_BALANCE') {
-      updateData.onboarding_step = "ACTIVE";
-      updateData.hasSyncedBalance = true;
     }
-
+    
     await userRef.set(updateData, { merge: true });
 
     if (transactionData.intent === 'SET_INCOME_TYPE') {
       const type = transactionData.income_type;
-      console.log(`[Background] 💰 Setting income type: ${type}`);
-      await userRef.update({ 
-        incomeType: type,
-        onboarding_step: type === 'hourly' ? "ASK_HOURLY_RATE" : "ASK_MONTHLY_INCOME"
-      });
+      console.log(`[Background] 💰 Value extracted: incomeType = ${type}`);
+      await userRef.update({ incomeType: type });
     }
 
     if (transactionData.intent === 'SET_HOURLY_RATE') {
         const rate = parseFloat(transactionData.hourly_rate);
-        console.log(`[Background] 💰 Setting hourly rate: ${rate}`);
-        await userRef.update({ 
-            hourlyRate: rate,
-            onboarding_step: "ASK_WEEKLY_HOURS"
-        });
+        console.log(`[Background] 💰 Value extracted: hourlyRate = ${rate}`);
+        await userRef.update({ hourlyRate: rate });
     }
 
     if (transactionData.intent === 'SET_WEEKLY_HOURS') {
         const hours = parseFloat(transactionData.weekly_hours);
-        console.log(`[Background] 💰 Setting weekly hours: ${hours}`);
+        console.log(`[Background] 💰 Value extracted: weeklyHours = ${hours}`);
         const estMonthly = (userData.hourlyRate * hours * 4.33);
         await userRef.update({ 
             weeklyHours: hours,
             estimatedMonthlyIncome: estMonthly,
-            monthlyIncome: estMonthly,
-            onboarding_step: "INITIAL_BALANCE"
+            monthlyIncome: estMonthly
         });
     }
 
     if (transactionData.intent === 'SET_MONTHLY_INCOME') {
       const income = parseFloat(transactionData.monthly_income);
-      console.log(`[Background] 💰 Setting monthly income: ${income}`);
+      console.log(`[Background] 💰 Value extracted: monthlyIncome = ${income}`);
       await userRef.update({ 
           monthlyIncome: income,
-          incomeType: 'monthly',
-          onboarding_step: "INITIAL_BALANCE"
+          incomeType: 'monthly'
       });
     }
 
