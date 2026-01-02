@@ -225,7 +225,17 @@ function App() {
   useEffect(() => {
     if (!userId) return;
     const unsubscribe = onSnapshot(doc(db, 'usuarios', userId), (doc) => {
-      setUserData(doc.exists() ? doc.data() : {});
+      if (doc.exists()) {
+        const data = doc.data();
+        setUserData(data);
+        // Force UK Mode if feature flag is active
+        if (data.features?.ukMode === true) {
+          console.log("🇬🇧 [Dashboard] UK Mode feature flag detected. Forcing GBP.");
+          setIsBrazil(false);
+        }
+      } else {
+        setUserData({});
+      }
     });
     return () => unsubscribe();
   }, [userId]);
