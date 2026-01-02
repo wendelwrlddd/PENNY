@@ -65,7 +65,8 @@ const translations = {
       Shopping: 'Shopping',
       Leisure: 'Leisure',
       General: 'General',
-      Bills: 'Bills'
+      Bills: 'Bills',
+      Others: 'Others'
     },
     pricingTitle: "Flexible Plans for You",
     pricingDesc: "Choose the plan that best fits your financial management needs.",
@@ -115,7 +116,8 @@ const translations = {
       Shopping: 'Compras',
       Leisure: 'Lazer',
       General: 'Geral',
-      Bills: 'Contas'
+      Bills: 'Contas',
+      Others: 'Outros'
     },
     pricingTitle: "Planos Flexíveis para Você",
     pricingDesc: "Escolha o plano que melhor se adapta às suas necessidades de gestão financeira.",
@@ -252,13 +254,15 @@ function App() {
       const catInput = (tx.category || 'General').toLowerCase().trim();
       
       const foundKey = Object.keys(translations.en.categories).find(key => {
+        if (key === 'Others') return false; // Handled as fallback
         const enVal = translations.en.categories[key].toLowerCase();
         const ptVal = translations.pt.categories[key].toLowerCase();
         // Match English keys, English values, or Portuguese values
         return key.toLowerCase() === catInput || enVal === catInput || ptVal === catInput || 
                (key === 'Food' && (catInput === 'comida' || catInput === 'alimentacao')) ||
-               (key === 'Bills' && (catInput === 'contas' || catInput === 'pagamentos' || catInput === 'boleto'));
-      }) || 'General';
+               (key === 'Bills' && (catInput === 'contas' || catInput === 'pagamentos' || catInput === 'boleto')) ||
+               (key === 'General' && catInput === 'geral');
+      }) || 'Others';
       
       const translatedName = t.categories[foundKey];
       acc[translatedName] = (acc[translatedName] || 0) + parseFloat(tx.amount || 0);
@@ -271,7 +275,8 @@ function App() {
     { name: t.categories.Transport, color: 'bg-blue-500' },
     { name: t.categories.Shopping, color: 'bg-pink-500' },
     { name: t.categories.Leisure, color: 'bg-purple-500' },
-    { name: t.categories.Bills, color: 'bg-red-500' }
+    { name: t.categories.Bills, color: 'bg-red-500' },
+    { name: t.categories.Others, color: 'bg-gray-500' }
   ];
 
   // 4. Atividade Semanal (Volume de transações por dia)
@@ -577,7 +582,7 @@ function App() {
                                  style={{ height: `${Math.max(percentage, amount > 0 ? 5 : 0)}%` }}
                                >
                                  <div className="absolute inset-0 bg-primary opacity-0 group-hover:opacity-20 transition-opacity blur-lg"></div>
-                                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-primary">
+                                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-bold text-primary">
                                     {formatCurrency(amount)}
                                  </div>
                                </div>
