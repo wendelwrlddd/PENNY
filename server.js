@@ -115,30 +115,41 @@ async function processMessageBackground(text, sender, instance, source) {
        return; 
     }
 
-    // 1. Detect Region
-    const isBrazil = sender.startsWith('55');
-    console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
-    
-    // --- KILL SWITCH: Disarm bot ---
-    if (text.toUpperCase() === '#DESARMAR') {
+    // --- 3. Fetch full User State for AI Awareness ---
+    const userRef = db.collection('usuarios').doc(sender);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() || {};
+
+    // 1. Detect Region (Prioritize feature flag, fallback to prefix)
+    let isBrazil = sender.startsWith('55');
+    if (userData.features?.ukMode === true) {
+        isBrazil = false;
+        console.log(`[Security] 🇬🇧 Forcing UK Mode due to feature flag for ${sender}`);
+    }
+
+    // --- COMMANDS (Kill Switch & Test Mode) ---
+    const upperText = text.toUpperCase();
+    if (upperText === '#DESARMAR') {
       console.log(`🚨 [PANIC] Disarm command received from ${sender}. Logging out instance ${instance}...`);
       await sendMessage(instance, sender, isBrazil ? "⚠️ *COMANDO DE DESARME ATIVADO!* Desconectando este número agora para sua segurança..." : "⚠️ *DISARM COMMAND ACTIVATED!* Disconnecting this number now for your security...");
-      
       try {
         await logoutInstance(instance);
         console.log(`✅ [PANIC] Instance ${instance} logged out successfully.`);
       } catch (err) {
         console.error(`❌ [PANIC] Failed to logout instance ${instance}:`, err.message);
-        // Fallback: Delete instance if logout fails
         await deleteInstance(instance);
       }
       return;
     }
 
-    // --- 3. Fetch full User State for AI Awareness ---
-    const userRef = db.collection('usuarios').doc(sender);
-    const userSnap = await userRef.get();
-    const userData = userSnap.data() || {};
+    if (upperText === '#UKMODE') {
+        console.log(`🇬🇧 [Test] Enabling UK Mode for ${sender}`);
+        await userRef.set({ features: { ukMode: true } }, { merge: true });
+        await sendMessage(instance, sender, "🇬🇧 *UK Mode Enabled!* Send #RESET to start the UK onboarding flow.");
+        return;
+    }
+    
+    console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
     
     // Calculate current balance and totals for the AI
     const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
