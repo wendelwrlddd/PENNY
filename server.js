@@ -154,14 +154,23 @@ async function processMessageBackground(text, sender, instance, source) {
     // Calculate current balance and totals for the AI
     const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
     
-    // Unified Onboarding Step Machine
-    let onboarding_step = userData.onboarding_complete ? "ACTIVE" : (userData.onboarding_step || null);
-    
-    // Auto-start onboarding for non-active users on any message
-    if (!onboarding_step || onboarding_step === 'null') {
-        onboarding_step = "INCOME_TYPE";
-        await userRef.update({ onboarding_step: "INCOME_TYPE", onboarding_complete: false });
-    }
+    // --- DETERMINISTIC STATE MACHINE (v4) ---
+    const determineCurrentStep = (data) => {
+        if (!data.onboarding_complete) {
+            if (!data.incomeType) return "INCOME_TYPE";
+            if (data.incomeType === 'hourly') {
+                if (!data.hourlyRate) return "ASK_HOURLY_RATE";
+                if (!data.weeklyHours) return "ASK_WEEKLY_HOURS";
+            } else {
+                if (!data.monthlyIncome) return "ASK_MONTHLY_INCOME";
+            }
+            if (!data.hasSyncedBalance) return "INITIAL_BALANCE";
+        }
+        return "ACTIVE";
+    };
+
+    const currentStep = determineCurrentStep(userData);
+    console.log(`[Machine] 🚩 Current Step: ${currentStep}`);
 
     const aiState = {
       incomeType: userData.incomeType || null,
@@ -173,13 +182,14 @@ async function processMessageBackground(text, sender, instance, source) {
       totalToday: totalDia,
       totalMonth: totalMes,
       lastAction: userData.lastAction || 'none',
-      onboarding_step: onboarding_step,
+      onboardingStep: currentStep, // Pass the backend-calculated step
       dashboard_link: `https://penny-finance.vercel.app/?user=${sender}`
     };
 
     let transactionData = null;
     try {
-      transactionData = await extractFinancialData(text, aiState, isBrazil);
+      // Pass the explicit objective to the AI
+      transactionData = await extractFinancialData(text, aiState, isBrazil, currentStep);
     } catch (aiError) {
       console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
       if (source === 'whatsapp-evolution') {
@@ -209,12 +219,7 @@ async function processMessageBackground(text, sender, instance, source) {
       updatedAt: new Date().toISOString()
     };
 
-    // Global Onboarding Step Update from AI
-    if (transactionData.next_question) {
-      console.log(`[Background] ➡️ Advancing onboarding step to: ${transactionData.next_question}`);
-      updateData.onboarding_step = transactionData.next_question;
-    }
-    
+    // No longer trust AI to decide "next_question" - we calculate it next turn
     await userRef.set(updateData, { merge: true });
 
     if (transactionData.intent === 'SET_INCOME_TYPE') {
