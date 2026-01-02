@@ -148,6 +148,35 @@ async function processMessageBackground(text, sender, instance, source) {
         await sendMessage(instance, sender, "🇬🇧 *UK Mode Enabled!* Send #RESET to start the UK onboarding flow.");
         return;
     }
+
+    if (upperText === '#RESET') {
+        console.log(`🗑️ [Reset] Native reset triggered for ${sender}`);
+        await userRef.update({
+            monthlyIncome: admin.firestore.FieldValue.delete(),
+            hourlyRate: admin.firestore.FieldValue.delete(),
+            weeklyHours: admin.firestore.FieldValue.delete(),
+            incomeType: admin.firestore.FieldValue.delete(),
+            payFrequency: admin.firestore.FieldValue.delete(),
+            payDay: admin.firestore.FieldValue.delete(),
+            lastPayDate: admin.firestore.FieldValue.delete(),
+            nextEstimatedPayDate: admin.firestore.FieldValue.delete(),
+            lastProactivePrompt: admin.firestore.FieldValue.delete(),
+            lastAction: admin.firestore.FieldValue.delete(),
+            onboarding_complete: false,
+            hasSyncedBalance: admin.firestore.FieldValue.delete()
+        });
+        
+        const txs = await userRef.collection('transactions').get();
+        const batch = db.batch();
+        txs.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+
+        const reply = isBrazil 
+            ? "🗑️ *Perfil resetado!* Vamos recomeçar do zero. Me mande um 'Oi' para iniciar!"
+            : "🗑️ *Profile reset!* I've cleared everything. Send me a 'Hi' to start fresh!";
+        await sendMessage(instance, sender, reply);
+        return;
+    }
     
     console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
     
@@ -237,7 +266,8 @@ async function processMessageBackground(text, sender, instance, source) {
     if (transactionData.intent === 'SET_WEEKLY_HOURS') {
         const hours = parseFloat(transactionData.weekly_hours);
         console.log(`[Background] 💰 Value extracted: weeklyHours = ${hours}`);
-        const estMonthly = (userData.hourlyRate * hours * 4.33);
+        const rate = userData.hourlyRate || 0;
+        const estMonthly = (rate * hours * 4.33);
         await userRef.update({ 
             weeklyHours: hours,
             estimatedMonthlyIncome: estMonthly,
