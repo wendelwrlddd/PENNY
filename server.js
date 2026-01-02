@@ -287,19 +287,23 @@ async function processMessageBackground(text, sender, instance, source) {
       const expenses = transactionData.expenses || [];
       // Support the single amount/category if expenses array is empty
       if (expenses.length === 0 && transactionData.amount) {
-        expenses.push({ amount: transactionData.amount, category: transactionData.category || 'General' });
+        expenses.push({ 
+          amount: transactionData.amount, 
+          category: transactionData.category || 'General',
+          item: text.length > 50 ? text.substring(0, 50) + "..." : text
+        });
       }
 
-      console.log(`[Background] 💸 Adding ${expenses.length} expenses...`);
+      console.log(`[Background] 💸 Adding ${expenses.length} transaction(s) for ${transactionData.intent}`);
       
       for (const exp of expenses) {
         await userRef.collection('transactions').add({
           amount: parseFloat(exp.amount),
-          category: exp.category || 'General',
-          description: text,
           type: 'expense',
+          category: exp.category || 'General',
+          description: exp.item || (isBrazil ? 'Gasto registrado' : 'Recorded expense'),
           createdAt: new Date().toISOString(),
-          intent: transactionData.intent
+          intent: 'ADD_EXPENSE' // Store as normal expense for dashboard compatibility
         });
       }
     }
