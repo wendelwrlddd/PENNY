@@ -141,7 +141,7 @@ async function processMessageBackground(text, sender, instance, source) {
     const userData = userSnap.data() || {};
     
     // Calculate current balance and totals for the AI
-    const { totalIncome, totalExpenses, currentBalance } = await calculateUserTotals(userRef, isBrazil);
+    const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
     
     // Determine onboarding step
     let onboarding_step = "ACTIVE";
@@ -155,6 +155,8 @@ async function processMessageBackground(text, sender, instance, source) {
     const aiState = {
       monthlyIncome: userData.monthlyIncome || null,
       currentBalance: currentBalance,
+      totalToday: totalDia,
+      totalMonth: totalMes,
       lastAction: userData.lastAction || 'none',
       onboarding_step: onboarding_step,
       dashboard_link: `https://penny-finance.vercel.app/?user=${sender}`
