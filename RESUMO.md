@@ -96,4 +96,17 @@ Meta for Developers: https://developers.facebook.com/
 
 ---
 
-**Tudo salvo e pronto para continuar! 🎉**
+
+---
+
+## 🧠 Inteligência do Sistema (Jan/2026)
+
+- **Cérebro:** Penny (AI Financial Assistant)
+- **Status:** Consolidado e Implantado
+- **Principais Funções:**
+  - Onboarding Inteligente (Perguntas em sequência)
+  - Reconciliação Automática de Saldo (Ajuste vs Sobra)
+  - Identidade Global (Inglês padrão, Português para BR)
+  - Deploy Automatizado via Fly.io
+
+**Tudo atualizado, commitado e em produção! 🚀**
