@@ -154,16 +154,17 @@ async function processMessageBackground(text, sender, instance, source) {
     // Calculate current balance and totals for the AI
     const { totalDia, totalMes, currentBalance } = await calculateUserTotals(userRef, isBrazil);
     
-    // Determine onboarding step
-    let onboarding_step = "ACTIVE";
-    if (!userData.monthlyIncome) {
-      // If we are in the middle of onboarding, AI might have told us last time
-      onboarding_step = userData.onboarding_step || "null";
-    } else if (userData.monthlyIncome && !userData.hasSyncedBalance) {
-      onboarding_step = "ASK_BALANCE";
+    // Unified Onboarding Step Machine
+    let onboarding_step = userData.onboarding_complete ? "ACTIVE" : (userData.onboarding_step || null);
+    
+    // Auto-start onboarding for non-active users on any message
+    if (!onboarding_step || onboarding_step === 'null') {
+        onboarding_step = "INCOME_TYPE";
+        await userRef.update({ onboarding_step: "INCOME_TYPE", onboarding_complete: false });
     }
 
     const aiState = {
+      incomeType: userData.incomeType || null,
       monthlyIncome: userData.monthlyIncome || null,
       hourlyRate: userData.hourlyRate || null,
       weeklyHours: userData.weeklyHours || null,
@@ -218,36 +219,86 @@ async function processMessageBackground(text, sender, instance, source) {
     await userRef.set(updateData, { merge: true });
 
     if (transactionData.intent === 'SET_INCOME_TYPE') {
-      const incomeType = transactionData.income_type;
-      console.log(`[Background] 💼 Setting income type: ${incomeType}`);
-      await userRef.update({ incomeType });
-    }
-
-    if (transactionData.intent === 'SET_HOURLY_RATE') {
-      const rate = parseFloat(transactionData.hourly_rate);
-      console.log(`[Background] 💸 Setting hourly rate: ${rate}`);
-      await userRef.update({ hourlyRate: rate });
-    }
-
-    if (transactionData.intent === 'SET_WEEKLY_HOURS') {
-      const hours = parseFloat(transactionData.weekly_hours);
-      console.log(`[Background] 🕒 Setting weekly hours: ${hours}`);
-      
-      const hourlyRate = userData.hourlyRate || transactionData.hourly_rate || 0;
-      const weeklyIncome = hourlyRate * hours;
-      const monthlyIncome = weeklyIncome * 4.33;
-
+      const type = transactionData.income_type;
+      console.log(`[Background] 💰 Setting income type: ${type}`);
       await userRef.update({ 
-        weeklyHours: hours,
-        estimatedWeeklyIncome: weeklyIncome,
-        monthlyIncome: monthlyIncome // Use estimate as base for onboarding logic
+        incomeType: type,
+        onboarding_step: type === 'hourly' ? "ASK_HOURLY_RATE" : "ASK_MONTHLY_INCOME"
       });
     }
 
-    if (transactionData.intent === 'SET_PAY_FREQUENCY') {
-      const frequency = transactionData.pay_frequency;
-      console.log(`[Background] 📅 Setting pay frequency: ${frequency}`);
-      await userRef.update({ payFrequency: frequency });
+    if (transactionData.intent === 'SET_HOURLY_RATE') {
+        const rate = parseFloat(transactionData.hourly_rate);
+        console.log(`[Background] 💰 Setting hourly rate: ${rate}`);
+        await userRef.update({ 
+            hourlyRate: rate,
+            onboarding_step: "ASK_WEEKLY_HOURS"
+        });
+    }
+
+    if (transactionData.intent === 'SET_WEEKLY_HOURS') {
+        const hours = parseFloat(transactionData.weekly_hours);
+        console.log(`[Background] 💰 Setting weekly hours: ${hours}`);
+        const estMonthly = (userData.hourlyRate * hours * 4.33);
+        await userRef.update({ 
+            weeklyHours: hours,
+            estimatedMonthlyIncome: estMonthly,
+            monthlyIncome: estMonthly,
+            onboarding_step: "INITIAL_BALANCE"
+        });
+    }
+
+    if (transactionData.intent === 'SET_MONTHLY_INCOME') {
+      const income = parseFloat(transactionData.monthly_income);
+      console.log(`[Background] 💰 Setting monthly income: ${income}`);
+      await userRef.update({ 
+          monthlyIncome: income,
+          incomeType: 'monthly',
+          onboarding_step: "INITIAL_BALANCE"
+      });
+    }
+
+    if (transactionData.intent === 'SET_CURRENT_BALANCE') {
+        const reportedBalance = parseFloat(transactionData.amount);
+        console.log(`[Background] 🏦 Setting Initial Balance: ${reportedBalance}`);
+        
+        // 1. Calculate Adjustment
+        // We use monthlyIncome as the "theoretical start" and adjust to reach the reportedBalance.
+        const currentTotals = await calculateUserTotals(userRef, isBrazil);
+        const incomeAsRef = userData.monthlyIncome || userData.estimatedMonthlyIncome || 0;
+        
+        // Current balance in system is just totalIncome - totalExpenses.
+        // Onboarding creates NO income yet, so currentBalance is 0.
+        // We want to force it to reportedBalance by creating an adjustment.
+        // If they have £200, and they should have had £2598 (income), they spent £2398.
+        const diff = incomeAsRef - reportedBalance;
+        
+        console.log(`[Background] ⚖️ Creating bridge income: ${incomeAsRef}`);
+        await userRef.collection('transactions').add({
+            amount: incomeAsRef,
+            type: 'income',
+            category: 'Onboarding',
+            description: isBrazil ? 'Renda Inicial' : 'Initial Income',
+            createdAt: new Date().toISOString()
+        });
+
+        if (diff !== 0) {
+            console.log(`[Background] ⚖️ Creating adjustment transaction: ${diff}`);
+            await userRef.collection('transactions').add({
+                amount: Math.abs(diff),
+                type: diff > 0 ? 'expense' : 'income',
+                category: 'Adjustment',
+                description: isBrazil ? 'Ajuste de Saldo Inicial' : 'Initial Balance Adjustment',
+                createdAt: new Date().toISOString()
+            });
+        }
+        
+        await userRef.update({ 
+            onboarding_step: "ACTIVE",
+            onboarding_complete: true,
+            hasSyncedBalance: true,
+            lastAction: 'ONBOARDING_COMPLETE'
+        });
     }
 
     if (transactionData.intent === 'SET_WEEKLY_HOURS_OVERRIDE') {
@@ -266,58 +317,16 @@ async function processMessageBackground(text, sender, instance, source) {
         });
     }
 
-    if (transactionData.intent === 'SET_MONTHLY_INCOME') {
-      const income = parseFloat(transactionData.monthly_income);
-      console.log(`[Background] 💰 Setting monthly income: ${income}`);
-      await userRef.update({ monthlyIncome: income, incomeType: 'monthly' });
-      
-      // Also record as a transaction to update balance
-      await userRef.collection('transactions').add({
-        amount: income,
-        type: 'income',
-        category: 'General',
-        description: isBrazil ? 'Renda Mensal' : 'Monthly Income',
-        createdAt: new Date().toISOString(),
-        intent: 'SET_MONTHLY_INCOME'
-      });
+    if (transactionData.intent === 'SET_PAY_FREQUENCY') {
+      const frequency = transactionData.pay_frequency;
+      console.log(`[Background] 📅 Setting pay frequency: ${frequency}`);
+      await userRef.update({ payFrequency: frequency });
     }
 
     if (transactionData.intent === 'SET_PAYDAY') {
       const day = parseInt(transactionData.payday);
       console.log(`[Background] 📅 Setting payday: ${day}`);
       await userRef.update({ payDay: day });
-    }
-
-    if (transactionData.intent === 'SET_CURRENT_BALANCE') {
-      console.log(`[Background] 🔄 Setting current balance...`);
-      
-      if (transactionData.balance_change) {
-        // CASE 2: Surplus logic - Informational income to adjust balance
-        console.log(`[Background] 📈 Surplus detected: ${transactionData.balance_change}`);
-        await userRef.collection('transactions').add({
-          amount: parseFloat(transactionData.balance_change),
-          type: 'income',
-          category: isBrazil ? '💰 Sobra Inicial' : '💰 Initial Savings',
-          description: isBrazil ? 'Ajuste de Saldo (Sobra)' : 'Initial Balance Adjustment (Surplus)',
-          createdAt: new Date().toISOString(),
-          intent: 'SET_CURRENT_BALANCE'
-        });
-      } else {
-        // CASE 1: Adjustment expense logic
-        let adjustment = transactionData.adjustment_expense;
-        
-        if (adjustment !== null) {
-          // Record adjustment as an expense
-          await userRef.collection('transactions').add({
-            amount: Math.max(0, adjustment),
-            type: 'expense',
-            category: isBrazil ? '💸 Ajuste Inicial' : '💸 Initial Adjustment',
-            description: isBrazil ? 'Gastos Anteriores (Ajuste)' : 'Previous Expenses (Adjustment)',
-            createdAt: new Date().toISOString(),
-            intent: 'SET_CURRENT_BALANCE'
-          });
-        }
-      }
     }
 
     if (transactionData.intent === 'ADD_BALANCE') {
@@ -382,10 +391,17 @@ async function processMessageBackground(text, sender, instance, source) {
       console.log(`[Background] 🗑️ Resetting profile for ${sender}...`);
       await userRef.update({
         monthlyIncome: admin.firestore.FieldValue.delete(),
+        hourlyRate: admin.firestore.FieldValue.delete(),
+        weeklyHours: admin.firestore.FieldValue.delete(),
+        incomeType: admin.firestore.FieldValue.delete(),
+        payFrequency: admin.firestore.FieldValue.delete(),
         payDay: admin.firestore.FieldValue.delete(),
+        lastPayDate: admin.firestore.FieldValue.delete(),
+        nextEstimatedPayDate: admin.firestore.FieldValue.delete(),
         lastProactivePrompt: admin.firestore.FieldValue.delete(),
         lastAction: admin.firestore.FieldValue.delete(),
-        onboarding_step: admin.firestore.FieldValue.delete(),
+        onboarding_step: "INCOME_TYPE",
+        onboarding_complete: false,
         hasSyncedBalance: admin.firestore.FieldValue.delete()
       });
       
@@ -396,14 +412,15 @@ async function processMessageBackground(text, sender, instance, source) {
 
       if (!transactionData.response_message && source === 'whatsapp-evolution') {
         const reply = isBrazil 
-          ? `🗑️ *Perfil resetado!* Apaguei seus dados e histórico. Você é um novo usuário agora! 😉`
-          : `🗑️ *Profile reset!* I've cleared your data and history. You're a new user now! 😉`;
+          ? `🗑️ *Perfil resetado!* Vamos recomeçar do zero. Como você recebe sua renda? 1️⃣ Por hora, 2️⃣ Semanal, 3️⃣ Quinzenal, 4️⃣ Mensal / Contrato`
+          : `🗑️ *Profile reset!* Let's start from scratch. How do you receive your income? 1️⃣ Hourly, 2️⃣ Weekly, 3️⃣ Fortnightly, 4️⃣ Monthly / Contract`;
         await sendMessage(instance, sender, reply);
       }
     }
 
     // --- LOW BALANCE ANXIETY MODE ---
-    if (!isBrazil && transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES') {
+    // Only trigger if onboarding is complete and it's an expense
+    if (userData.onboarding_complete && !isBrazil && (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES')) {
         const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil);
         const todayStr = new Date().toISOString().split('T')[0];
         
@@ -589,42 +606,24 @@ async function checkProactiveMessages() {
       const userId = doc.id;
       const lastPrompt = userData.lastProactivePrompt ? new Date(userData.lastProactivePrompt) : new Date(0);
 
-      // Only prompt if last prompt was > 30 mins ago
-      if (lastPrompt < thirtyMinsAgo) {
+      // Only prompt if last prompt was > 30 mins ago AND onboarding is complete
+      if (userData.onboarding_complete && lastPrompt < thirtyMinsAgo) {
         const isBrazil = userId.startsWith('55');
-        const instance = userData.instance || 'penny-instance'; // Better default, but should come from DB
+        const instance = userData.instance || 'penny-instance';
         
-        let message = "";
-        
-        if (!userData.monthlyIncome) {
-          message = isBrazil 
-            ? "Oi! Notei que ainda não sei qual sua renda mensal ou salário. Quanto você costuma receber para eu organizar seu saldo? 💰"
-            : "Hi! I noticed I don't know your monthly income yet. How much do you usually receive so I can track your balance? 💰";
-        } else if (userData.isSalaried && !userData.payDay) {
-          message = isBrazil
-            ? "Vi que você é assalariado! Que dia do mês você costuma receber seu salário? 📅"
-            : "I see you're salaried! What day of the month do you usually receive your salary? 📅";
-        } else {
-          // Check if user has synced balance this month
-          const monthStr = new Date().toISOString().substring(0, 7);
-          const monthTxs = await doc.ref.collection('transactions')
-            .where('createdAt', '>=', monthStr + '-01')
-            .limit(1)
-            .get();
+        // Revised proactive logic: only nudges for expenses if they haven't sent any in 24h
+        const monthStr = new Date().toISOString().substring(0, 7);
+        const dayTxs = await doc.ref.collection('transactions')
+          .where('createdAt', '>=', new Date(now.getTime() - 24 * 60 * 60000).toISOString())
+          .limit(1)
+          .get();
 
-          if (monthTxs.empty) {
-            // Se é assalariado e não é dia de pagamento, perguntar quanto tem na conta para sincronizar
-            const today = new Date().getDate();
-            if (userData.isSalaried && today !== userData.payDay) {
-               message = isBrazil
-                ? "Para eu organizar seu saldo hoje, quanto você tem na sua conta agora? Assim calculo quanto você já gastou este mês! 📈"
-                : "To organize your balance today, how much do you have in your account right now? This way I can calculate how much you've already spent this month! 📈";
-            }
-          }
-        }
-
-        if (message) {
-          console.log(`🕒 [Proactive] Sending prompt to ${userId}`);
+        if (dayTxs.empty) {
+          const message = isBrazil
+            ? "Oi! Passando para ver se você teve algum gasto hoje que esqueceu de anotar. 📝"
+            : "Hi! Just checking if you had any expenses today that you forgot to track. 📝";
+          
+          console.log(`🕒 [Proactive] Sending nudge to ${userId}`);
           await sendMessage(instance, userId, message);
           await doc.ref.update({ lastProactivePrompt: now.toISOString() });
         }
@@ -650,6 +649,8 @@ cron.schedule('0 0 * * *', async () => {
 
     for (const doc of usersSnapshot.docs) {
       const userData = doc.data();
+      if (!userData.onboarding_complete) continue;
+      
       const sender = doc.id;
       const isBrazil = sender.startsWith('55');
       const instance = userData.instance || 'penny-instance';
