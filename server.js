@@ -566,6 +566,13 @@ app.post('/webhook', async (req, res) => {
       const message = body.entry[0].changes[0].value.messages[0];
       const from = message.from;
       
+      // 🔒 Whitelist check FIRST (Silent Ignore)
+      const isAllowedMeta = ALLOWED_NUMBERS.some(num => from.includes(num));
+      if (!isAllowedMeta) {
+        console.log(`ℹ️ Meta: Ignorando mensagem de número não autorizado: ${from}`);
+        return;
+      }
+
       // --- GATEKEEPER (META) ---
       if (message.type === 'audio' || message.type === 'voice') {
         await sendMessage('OfficialMeta', from, "I haven't got ears yet 👂");
@@ -577,7 +584,12 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (message.type === 'text') {
-        processMessageBackground(message.text.body, from, 'OfficialMeta', 'whatsapp-meta');
+        const textBody = message.text.body || "";
+        if (textBody.length > 200) {
+          await sendMessage('OfficialMeta', from, "Your message is too long, mate. Please keep it short. 📉");
+          return;
+        }
+        processMessageBackground(textBody, from, 'OfficialMeta', 'whatsapp-meta');
       } else {
         console.log('ℹ️ Meta: Non-text message ignored');
       }
@@ -600,6 +612,12 @@ app.post('/webhook', async (req, res) => {
       const instance = body.instance || body.sender || 'UnknownInstance';
       const sender = key?.remoteJid?.split('@')[0];
 
+      // 🔒 Whitelist check FIRST (Silent Ignore)
+      if (!sender || !ALLOWED_NUMBERS.some(num => sender.includes(num))) {
+        console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
+        return;
+      }
+
       // --- GATEKEEPER (EVOLUTION) ---
       const isAudio = message?.audioMessage || message?.pttMessage;
       const isVisual = message?.imageMessage || message?.videoMessage || message?.stickerMessage;
@@ -621,14 +639,15 @@ app.post('/webhook', async (req, res) => {
       console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
 
       if (text && sender) {
-        // 🔒 Filtro de Segurança: Apenas números autorizados
-        const isAllowed = ALLOWED_NUMBERS.some(num => sender.includes(num));
-        
-        if (isAllowed) {
-          processMessageBackground(text, sender, instance, 'whatsapp-evolution');
-        } else {
-          console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
+        // --- LENGTH CHECK ---
+        if (text.length > 200) {
+          console.log(`ℹ️ [Gatekeeper] Message too long (${text.length} chars) from ${sender}`);
+          await sendMessage(instance, sender, "Your message is too long, mate. Please keep it short. 📉");
+          return;
         }
+
+        // Whitelist was already checked at the top of Case 2
+        processMessageBackground(text, sender, instance, 'whatsapp-evolution');
       } else {
         console.log('ℹ️ Evolution: No text or sender found');
       }
