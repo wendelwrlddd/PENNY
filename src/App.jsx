@@ -142,16 +142,22 @@ function App() {
   const [localeLoaded, setLocaleLoaded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
 
   // PASSO 4: Implementação no Frontend (App.jsx)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('token');
 
+    // URL do Backend (Fly.io em produção, localhost em dev)
+    const baseUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:8080' 
+      : 'https://penny-finance-backend.fly.dev';
+
     // CASO 1: Usuário chegou via Link Mágico (tem token na URL)
     if (tokenFromUrl) {
       console.log("🔐 [Auth] Permutando token...");
-      const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8080' : '';
+      setAuthChecking(true);
       fetch(`${baseUrl}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -170,12 +176,16 @@ function App() {
       .then(data => {
           if (data?.user) setAuthUser(data.user);
       })
-      .catch(err => console.error(err));
+      .catch(err => {
+          console.error(err);
+          setIsAuthenticated(false);
+      })
+      .finally(() => setAuthChecking(false));
     } 
 
     // CASO 2: Usuário abriu o app direto (verificar se já tem cookie)
     else {
-       const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8080' : '';
+       setAuthChecking(true);
        fetch(`${baseUrl}/api/me`, { credentials: 'include' })
        .then(res => {
           if (res.ok) {
@@ -190,7 +200,11 @@ function App() {
        .then(data => {
           if (data?.user) setAuthUser(data.user);
        })
-       .catch(err => console.error(err));
+       .catch(err => {
+          console.error(err);
+          setIsAuthenticated(false);
+       })
+       .finally(() => setAuthChecking(false));
     }
   }, []);
 
@@ -771,6 +785,14 @@ function App() {
             </ul>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (authChecking || (isAuthenticated && !userId)) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
       </div>
     );
   }
