@@ -537,7 +537,7 @@ async function logRawMessage(instance, sender, text) {
 }
 
 // Handle Incoming Messages
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
   console.log('========================================');
   console.log('📦 Webhook POST received:', new Date().toISOString());
   
@@ -564,8 +564,20 @@ app.post('/webhook', (req, res) => {
     // CASE 1: Meta Official API
     if (body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
       const message = body.entry[0].changes[0].value.messages[0];
+      const from = message.from;
+      
+      // --- GATEKEEPER (META) ---
+      if (message.type === 'audio' || message.type === 'voice') {
+        await sendMessage('OfficialMeta', from, "I haven't got ears yet 👂");
+        return;
+      }
+      if (message.type === 'image' || message.type === 'video' || message.type === 'sticker') {
+        await sendMessage('OfficialMeta', from, "I can't see photos yet 📷");
+        return;
+      }
+
       if (message.type === 'text') {
-        processMessageBackground(message.text.body, message.from, 'OfficialMeta', 'whatsapp-meta');
+        processMessageBackground(message.text.body, from, 'OfficialMeta', 'whatsapp-meta');
       } else {
         console.log('ℹ️ Meta: Non-text message ignored');
       }
@@ -586,9 +598,25 @@ app.post('/webhook', (req, res) => {
       const message = data.message;
       const key = data.key;
       const instance = body.instance || body.sender || 'UnknownInstance';
-      
-      const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
       const sender = key?.remoteJid?.split('@')[0];
+
+      // --- GATEKEEPER (EVOLUTION) ---
+      const isAudio = message?.audioMessage || message?.pttMessage;
+      const isVisual = message?.imageMessage || message?.videoMessage || message?.stickerMessage;
+      const isDoc = message?.documentMessage || message?.documentWithCaptionMessage;
+      
+      if (isAudio) {
+        console.log(`ℹ️ [Gatekeeper] Audio detected from ${sender}`);
+        await sendMessage(instance, sender, "I haven't got ears yet 👂");
+        return;
+      }
+      if (isVisual || isDoc) {
+        console.log(`ℹ️ [Gatekeeper] Media/Doc detected from ${sender}`);
+        await sendMessage(instance, sender, "I can't see photos yet 📷");
+        return;
+      }
+
+      const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
       
       console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
 
