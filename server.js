@@ -4,6 +4,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import admin from 'firebase-admin';
+import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
+import authMiddleware from './authMiddleware.js';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
 import { sendMessage, logoutInstance, deleteInstance } from './lib/evolution.js';
@@ -19,6 +23,7 @@ const ALLOWED_NUMBERS = [
 ];
 
 app.use(cors());
+app.use(cookieParser());
 // --- NEW: Raw Body Middleware for Webhook ---
 // This allows us to see the original payload before Express parses it
 app.use('/webhook', express.text({ type: 'application/json' }));
@@ -95,6 +100,103 @@ app.post('/api/sys/disarm', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: error.message });
     }
+  }
+});
+
+/**
+ * Passo 1: Atualizar o Modelo de Usuário (Firestore)
+ * Garante que o usuário possua um accessToken seguro.
+ */
+async function generateUserToken(phoneNumber) {
+  const userRef = db.collection('usuarios').doc(phoneNumber);
+  const userSnap = await userRef.get();
+  let userData = userSnap.data();
+
+  if (userData?.accessToken) {
+    return userData.accessToken;
+  }
+
+  const newToken = uuidv4();
+  await userRef.set({ accessToken: newToken }, { merge: true });
+  console.log(`[Auth] 🔑 Generated new token for ${phoneNumber}: ${newToken}`);
+  return newToken;
+}
+
+/**
+ * Passo 2: Criar Endpoint de Troca de Token (Login)
+ */
+app.post('/auth/login', async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({ error: 'Token is required' });
+  }
+
+  try {
+    const usersSnapshot = await db.collection('usuarios')
+      .where('accessToken', '==', token)
+      .limit(1)
+      .get();
+
+    if (usersSnapshot.empty) {
+      console.warn(`[Auth] ❌ Invalid token attempt: ${token}`);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userDoc = usersSnapshot.docs[0];
+    const userData = userDoc.data();
+    const phoneNumber = userDoc.id;
+
+    // Gere um JWT assinado
+    const sessionToken = jwt.sign(
+      { uid: userDoc.id, phoneNumber: phoneNumber },
+      process.env.JWT_SECRET || 'penny-secret-key',
+      { expiresIn: '7d' }
+    );
+
+    // Defina o cookie penny_session
+    res.cookie('penny_session', sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 dias
+    });
+
+    console.log(`[Auth] ✅ Session created for ${phoneNumber}`);
+    res.json({ 
+      success: true, 
+      user: { 
+        phoneNumber: phoneNumber,
+        onboarding_complete: userData.onboarding_complete 
+      } 
+    });
+  } catch (error) {
+    console.error('[Auth] ❌ Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Rota /api/me (Validação)
+ */
+app.get('/api/me', authMiddleware, async (req, res) => {
+  try {
+    const userRef = db.collection('usuarios').doc(req.user.phoneNumber);
+    const userSnap = await userRef.get();
+
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        phoneNumber: req.user.phoneNumber,
+        ...userSnap.data()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching user data' });
   }
 });
 
@@ -216,7 +318,7 @@ async function processMessageBackground(text, sender, instance, source) {
       healthRatioWeek: totals.healthRatioWeek,
       lastAction: userData.lastAction || 'none',
       onboardingStep: currentStep, 
-      dashboard_link: `https://penny-finance.vercel.app/?user=${sender}`
+      dashboard_link: `https://penny-finance.vercel.app/login?token=${await generateUserToken(sender)}`
     };
 
     let transactionData = null;

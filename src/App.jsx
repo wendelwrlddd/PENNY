@@ -57,6 +57,7 @@ const translations = {
     noTransactions: "No transactions recorded yet.",
     week: "Week",
     month: "Month",
+    spentOfTotal: "Consumed",
     footerDesc: "The easiest way to track your money, right from your WhatsApp.",
     days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     categories: {
@@ -108,6 +109,7 @@ const translations = {
     noTransactions: "Nenhuma transação registrada ainda.",
     week: "Semana",
     month: "Mês",
+    spentOfTotal: "Gasto do Total",
     footerDesc: "A maneira mais fácil de organizar seu dinheiro, direto pelo seu WhatsApp.",
     days: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
     categories: {
@@ -138,10 +140,61 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [isBrazil, setIsBrazil] = useState(false);
   const [localeLoaded, setLocaleLoaded] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
 
-  // 1. Get User ID from URL
-  const urlParams = new URLSearchParams(window.location.search);
-  const userId = urlParams.get('user');
+  // PASSO 4: Implementação no Frontend (App.jsx)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+
+    // CASO 1: Usuário chegou via Link Mágico (tem token na URL)
+    if (tokenFromUrl) {
+      console.log("🔐 [Auth] Permutando token...");
+      const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8080' : '';
+      fetch(`${baseUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: tokenFromUrl }),
+          credentials: 'include' 
+      })
+      .then(res => {
+          if (res.ok) {
+              console.log("✅ [Auth] Logado com sucesso!");
+              window.history.replaceState({}, document.title, "/");
+              setIsAuthenticated(true);
+              return res.json();
+          }
+          throw new Error('Token inválido');
+      })
+      .then(data => {
+          if (data?.user) setAuthUser(data.user);
+      })
+      .catch(err => console.error(err));
+    } 
+
+    // CASO 2: Usuário abriu o app direto (verificar se já tem cookie)
+    else {
+       const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:8080' : '';
+       fetch(`${baseUrl}/api/me`, { credentials: 'include' })
+       .then(res => {
+          if (res.ok) {
+              console.log("✅ [Auth] Sessão ativa encontrada.");
+              setIsAuthenticated(true);
+              return res.json();
+          } else {
+              console.warn("⚠️ [Auth] Nenhuma sessão ativa.");
+              setIsAuthenticated(false);
+          }
+       })
+       .then(data => {
+          if (data?.user) setAuthUser(data.user);
+       })
+       .catch(err => console.error(err));
+    }
+  }, []);
+
+  const userId = authUser?.phoneNumber;
 
   // Detect Country by IP
   useEffect(() => {
@@ -161,10 +214,11 @@ function App() {
 
   useEffect(() => {
     if (!userId) {
-      setLoading(false);
+      if (!isAuthenticated) setLoading(false);
       return;
     }
 
+    setLoading(true);
     const q = query(
       collection(db, 'usuarios', userId, 'transactions'), 
       orderBy('createdAt', 'desc')
@@ -178,11 +232,12 @@ function App() {
       setTransactions(transactionsData);
       setLoading(false);
     }, (error) => {
+      console.error("❌ [Firestore] Error fetching transactions:", error);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [userId]);
+  }, [userId, isAuthenticated]);
 
 
   const t = isBrazil ? translations.pt : translations.en;
@@ -251,16 +306,23 @@ function App() {
 
   const balance = totalIncome - totalExpenses;
 
-  // 2. Spending Percentage (Based on income if available, else 1% per transaction)
-  const incomeAsNumber = parseFloat(userData?.monthlyIncome || 0);
-  const spendingPercentage = incomeAsNumber > 0 
-    ? Math.min(Math.round((totalExpenses / incomeAsNumber) * 100), 100)
-    : Math.min(transactions.length, 100);
+  // 2. Burn Rate (Liquidez Consumida)
+  // actualSpending: Apenas gastos reais, exclui ajustes de saldo inicial
+  const actualSpending = transactions
+    .filter((t) => (t.type === 'expense' || !t.type) && t.category !== 'Adjustment' && t.category !== 'Onboarding' && t.type !== 'error')
+    .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+
+  const totalFundsAvailable = balance + actualSpending;
+
+  const spendingPercentage = totalFundsAvailable > 0 
+    ? Math.round((actualSpending / totalFundsAvailable) * 100) 
+    : 0;
 
   // 3. Agrupamento por Categorias Dinâmico
   const categoriesMap = transactions
     .filter(tx => (tx.type === 'expense' || !tx.type) && tx.type !== 'error')
     .reduce((acc, tx) => {
+      if (tx.category === 'Adjustment' || tx.category === 'Onboarding') return acc;
       const catInput = (tx.category || 'General').toLowerCase().trim();
       
       const foundKey = Object.keys(translations.en.categories).find(key => {
@@ -611,15 +673,22 @@ function App() {
                 <div className="p-8 bg-white/5 border border-white/10 rounded-3xl flex flex-col items-center text-center">
                    <h3 className="font-bold mb-8">{t.spendingGoal}</h3>
                    <div className="relative w-40 h-40 mb-8">
-                      <svg className="w-full h-full -rotate-90">
-                        <circle cx="80" cy="80" r="70" fill="none" stroke="#222" strokeWidth="12" />
-                        <circle cx="80" cy="80" r="70" fill="none" stroke="currentColor" strokeWidth="12" strokeDasharray={440} strokeDashoffset={440 - (440 * spendingPercentage) / 100} className="text-primary" strokeLinecap="round" />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-black">{spendingPercentage}%</span>
-                        <span className="text-[10px] text-gray-500 uppercase">{isBrazil ? "do mês" : "of month"}</span>
-                      </div>
-                   </div>
+                       <svg className="w-full h-full -rotate-90">
+                         <circle cx="80" cy="80" r="70" fill="none" stroke="#222" strokeWidth="12" />
+                         <circle 
+                            cx="80" cy="80" r="70" fill="none" 
+                            stroke="currentColor" strokeWidth="12" 
+                            strokeDasharray={440} 
+                            strokeDashoffset={440 - (440 * spendingPercentage) / 100} 
+                            className={`${spendingPercentage > 70 ? 'text-red-500' : spendingPercentage > 30 ? 'text-orange-500' : 'text-primary'}`} 
+                            strokeLinecap="round" 
+                         />
+                       </svg>
+                       <div className="absolute inset-0 flex flex-col items-center justify-center">
+                         <span className="text-3xl font-black">{spendingPercentage}%</span>
+                         <span className="text-[10px] text-gray-500 uppercase">{t.spentOfTotal}</span>
+                       </div>
+                    </div>
                    <div className="w-full space-y-4">
                        {mainCategories.map((cat, i) => {
                          const amount = categoriesMap[cat.name] || 0;
