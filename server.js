@@ -11,6 +11,7 @@ import authMiddleware from './authMiddleware.js';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
 import { sendMessage, logoutInstance, deleteInstance, sendPresence } from './lib/evolution.js';
+import { generateSubscriptionLink } from './services/paypalService.js';
 
 dotenv.config();
 
@@ -203,6 +204,52 @@ app.get('/api/me', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * 💳 Webhook do PayPal - Confirmação de Assinatura
+ * Rota: POST /webhooks/paypal
+ */
+app.post('/webhooks/paypal', async (req, res) => {
+  const event = req.body;
+
+  console.log('========================================');
+  console.log('📦 PayPal Webhook Received:', event.event_type);
+  
+  try {
+    // 1. Verificar se a assinatura foi ativada
+    if (event.event_type === 'BILLING.SUBSCRIPTION.ACTIVATED') {
+      const subscription = event.resource;
+      const userPhone = subscription.custom_id; // Recuperamos o telefone que enviamos no link
+
+      if (!userPhone) {
+        console.error('❌ PayPal Error: custom_id (phone) missing in payload');
+        return res.status(400).send('Custom ID required');
+      }
+
+      console.log(`✅ Subscription ACTIVATED for: ${userPhone}`);
+
+      // 2. Atualizar o Firestore para liberar o Premium
+      const userRef = db.collection('usuarios').doc(userPhone);
+      await userRef.set({
+        plan: 'premium',
+        subscriptionStatus: 'active',
+        paypalSubscriptionId: subscription.id,
+        premiumSince: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      console.log(`🚀 User ${userPhone} is now PREMIUM!`);
+    }
+
+    // Retorna 200 OK para o PayPal não tentar reenviar
+    res.status(200).send('Event processed');
+
+  } catch (error) {
+    console.error('❌ PayPal Webhook Error:', error.message);
+    res.status(500).send('Internal Server Error');
+  }
+  console.log('========================================');
+});
+
 // Helper function to process message in background
 async function processMessageBackground(text, sender, instance, source) {
   let replied = false; 
@@ -282,6 +329,17 @@ async function processMessageBackground(text, sender, instance, source) {
                 ? "🗑️ *Perfil resetado!* Vamos recomeçar do zero. Me mande um 'Oi' para iniciar!"
                 : "🗑️ *Profile reset!* I've cleared everything. Send me a 'Hi' to start fresh!";
             await sendMessage(instance, sender, reply);
+            replied = true;
+            return;
+        }
+
+        if (upperText === '#PREMIUM') {
+            const link = await generateSubscriptionLink(sender);
+            const msg = isBrazil
+                ? `🚀 *Penny Premium*\n\nClique no link abaixo para assinar o Penny Premium por £9.99/mês e liberar recursos exclusivos:\n\n${link}`
+                : `🚀 *Penny Premium*\n\nClick the link below to subscribe to Penny Premium for £9.99/month and unlock exclusive features:\n\n${link}`;
+            
+            await sendMessage(instance, sender, msg);
             replied = true;
             return;
         }

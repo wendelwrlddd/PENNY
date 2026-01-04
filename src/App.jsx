@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
-import { ShieldCheck, Globe, CheckCircle2, Users } from 'lucide-react';
+import { ShieldCheck, Globe, CheckCircle2, Users, Sparkles, PartyPopper, MessageCircle } from 'lucide-react';
 import './index.css';
 
 // Firebase Client Configuration
@@ -768,6 +768,67 @@ function App() {
     </div>
   );
 
+  const SuccessPage = () => (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center p-6 overflow-hidden relative">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-primary/20 blur-[120px] rounded-full pointer-events-none"></div>
+      
+      <div className="max-w-xl w-full glass border border-white/10 rounded-[40px] p-10 text-center relative z-10 animate-in fade-in zoom-in duration-700">
+        <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(34,197,94,0.4)] animate-bounce">
+          <PartyPopper className="w-12 h-12 text-black" />
+        </div>
+        
+        <h1 className="text-4xl font-black mb-4 tracking-tight">
+          Congratulations, Subscriber!
+        </h1>
+        <p className="text-gray-400 text-lg mb-10">
+          You have just unlocked the full potential of your finances with Penny Premium.
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 mb-10 text-left">
+          {[
+            { 
+              title: "Unlimited Intelligence", 
+              desc: "Full access to our most advanced AI financial models.",
+              icon: <Sparkles className="w-5 h-5 text-primary" />
+            },
+            { 
+              title: "Premium Reporting", 
+              desc: "Real-time health status and sophisticated spending projections.",
+              icon: <CheckCircle2 className="w-5 h-5 text-primary" />
+            },
+            { 
+              title: "Priority UK Support", 
+              desc: "First-class assistance from our team whenever you need it.",
+              icon: <ShieldCheck className="w-5 h-5 text-primary" />
+            }
+          ].map((benefit, i) => (
+            <div key={i} className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                {benefit.icon}
+              </div>
+              <div>
+                <h4 className="font-bold text-white text-sm">{benefit.title}</h4>
+                <p className="text-xs text-gray-500">{benefit.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button 
+          onClick={() => window.open('https://wa.me/557391082831', '_blank')}
+          className="w-full py-5 bg-primary text-black font-black rounded-2xl flex items-center justify-center gap-3 hover:scale-[1.02] transition-all shadow-[0_20px_40px_rgba(34,197,94,0.2)]"
+        >
+          <MessageCircle className="w-6 h-6" />
+          Back to WhatsApp
+        </button>
+
+        <p className="mt-6 text-xs text-gray-600 font-medium italic">
+          Tip: Send 'Hi' or 'Hello' on WhatsApp to see your account status!
+        </p>
+      </div>
+    </div>
+  );
+
   // --- Main Render Logic ---
 
   if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
@@ -795,6 +856,12 @@ function App() {
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
       </div>
     );
+  }
+
+  const isSuccessPage = window.location.pathname === '/payment-success';
+
+  if (isSuccessPage) {
+    return <SuccessPage />;
   }
 
   if (!userId) {
