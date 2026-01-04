@@ -318,7 +318,7 @@ async function processMessageBackground(text, sender, instance, source) {
       healthRatioWeek: totals.healthRatioWeek,
       lastAction: userData.lastAction || 'none',
       onboardingStep: currentStep, 
-      dashboard_link: `https://penny-finance.vercel.app/login?token=${await generateUserToken(sender)}`
+      dashboard_link: `https://penny-finance.vercel.app/?token=${await generateUserToken(sender)}`
     };
 
     let transactionData = null;
