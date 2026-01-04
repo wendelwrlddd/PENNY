@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import authMiddleware from './authMiddleware.js';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
-import { sendMessage, logoutInstance, deleteInstance } from './lib/evolution.js';
+import { sendMessage, logoutInstance, deleteInstance, sendPresence } from './lib/evolution.js';
 
 dotenv.config();
 
@@ -205,377 +205,247 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 
 // Helper function to process message in background
 async function processMessageBackground(text, sender, instance, source) {
+  let replied = false; 
+  let isBrazil = sender.startsWith('55'); 
+
   try {
+    // 1. Feedback Visual Imediato (Digitando...)
+    if (source === 'whatsapp-evolution') {
+      sendPresence(instance, sender, "composing").catch(() => {});
+    }
+
     console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
 
     // --- WHITELIST CHECK ---
-    // Ensure sender contains only digits for comparison
     const cleanSender = sender.replace(/\D/g, '');
     const isAllowed = ALLOWED_NUMBERS.some(num => cleanSender.includes(num));
 
     if (!isAllowed) {
        console.log(`[Security] ⛔ Blocked unauthorized number: ${sender}`);
-       // Optional: Send a rejection message? 
-       // For now, silent block to avoid spam/costs.
        return; 
     }
 
-    // --- 3. Fetch full User State for AI Awareness ---
-    const userRef = db.collection('usuarios').doc(sender);
-    const userSnap = await userRef.get();
-    const userData = userSnap.data() || {};
+    // Lógica de Timeout (Safety Net)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("PROCESS_TIMEOUT")), 15000);
+    });
 
-    // 1. Detect Region (Prioritize feature flag, fallback to prefix)
-    let isBrazil = sender.startsWith('55');
-    if (userData.features?.ukMode === true) {
-        isBrazil = false;
-        console.log(`[Security] 🇬🇧 Forcing UK Mode due to feature flag for ${sender}`);
-    }
-
-    // --- COMMANDS (Kill Switch & Test Mode) ---
-    const upperText = text.toUpperCase();
-    if (upperText === '#DESARMAR') {
-      console.log(`🚨 [PANIC] Disarm command received from ${sender}. Logging out instance ${instance}...`);
-      await sendMessage(instance, sender, isBrazil ? "⚠️ *COMANDO DE DESARME ATIVADO!* Desconectando este número agora para sua segurança..." : "⚠️ *DISARM COMMAND ACTIVATED!* Disconnecting this number now for your security...");
-      try {
-        await logoutInstance(instance);
-        console.log(`✅ [PANIC] Instance ${instance} logged out successfully.`);
-      } catch (err) {
-        console.error(`❌ [PANIC] Failed to logout instance ${instance}:`, err.message);
-        await deleteInstance(instance);
-      }
-      return;
-    }
-
-    if (upperText === '#UKMODE') {
-        console.log(`🇬🇧 [Test] Enabling UK Mode for ${sender}`);
-        await userRef.set({ features: { ukMode: true } }, { merge: true });
-        await sendMessage(instance, sender, "🇬🇧 *UK Mode Enabled!* Send #RESET to start the UK onboarding flow.");
-        return;
-    }
-
-    if (upperText === '#RESET') {
-        console.log(`🗑️ [Reset] Native reset triggered for ${sender}`);
-        await userRef.update({
-            monthlyIncome: admin.firestore.FieldValue.delete(),
-            hourlyRate: admin.firestore.FieldValue.delete(),
-            weeklyHours: admin.firestore.FieldValue.delete(),
-            incomeType: admin.firestore.FieldValue.delete(),
-            payFrequency: admin.firestore.FieldValue.delete(),
-            payDay: admin.firestore.FieldValue.delete(),
-            lastPayDate: admin.firestore.FieldValue.delete(),
-            nextEstimatedPayDate: admin.firestore.FieldValue.delete(),
-            lastProactivePrompt: admin.firestore.FieldValue.delete(),
-            lastAction: admin.firestore.FieldValue.delete(),
-            onboarding_complete: false,
-            hasSyncedBalance: admin.firestore.FieldValue.delete()
-        });
+    const executionPromise = (async () => {
+        const userRef = db.collection('usuarios').doc(sender);
+        const userSnap = await userRef.get();
+        const userData = userSnap.data() || {};
         
-        const txs = await userRef.collection('transactions').get();
-        const batch = db.batch();
-        txs.docs.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
+        if (userData.features?.ukMode === true) isBrazil = false;
 
-        const reply = isBrazil 
-            ? "🗑️ *Perfil resetado!* Vamos recomeçar do zero. Me mande um 'Oi' para iniciar!"
-            : "🗑️ *Profile reset!* I've cleared everything. Send me a 'Hi' to start fresh!";
-        await sendMessage(instance, sender, reply);
-        return;
-    }
-    
-    console.log(`[Background] 🤖 Region detected: ${isBrazil ? 'Brazil (PT-BR/R$)' : 'International (EN-GB/£)'}`);
-    
-    // Calculate current balance and totals for the AI
-    const totals = await calculateUserTotals(userRef, isBrazil, userData);
-    const { totalDia, totalMes, currentBalance } = totals;
-    
-    // --- DETERMINISTIC STATE MACHINE (v4) ---
-    const determineCurrentStep = (data) => {
-        if (!data.onboarding_complete) {
-            if (!data.incomeType) return "INCOME_TYPE";
-            if (data.incomeType === 'hourly') {
-                if (!data.hourlyRate) return "ASK_HOURLY_RATE";
-                if (!data.weeklyHours) return "ASK_WEEKLY_HOURS";
-            } else {
-                if (!data.monthlyIncome) return "ASK_MONTHLY_INCOME";
-            }
-            if (!data.hasSyncedBalance) return "INITIAL_BALANCE";
+        // --- COMMANDS ---
+        const upperText = text.toUpperCase();
+        if (upperText === '#DESARMAR') {
+          console.log(`🚨 [PANIC] Disarm command received from ${sender}. Logging out instance ${instance}...`);
+          await sendMessage(instance, sender, isBrazil ? "⚠️ *COMANDO DE DESARME ATIVADO!* Desconectando este número agora para sua segurança..." : "⚠️ *DISARM COMMAND ACTIVATED!* Disconnecting this number now for your security...");
+          replied = true;
+          try {
+            await logoutInstance(instance);
+          } catch (err) {
+            await deleteInstance(instance);
+          }
+          return;
         }
-        return "ACTIVE";
-    };
 
-    const currentStep = determineCurrentStep(userData);
-    console.log(`[Machine] 🚩 Current Step: ${currentStep}`);
+        if (upperText === '#UKMODE') {
+            await userRef.set({ features: { ukMode: true } }, { merge: true });
+            await sendMessage(instance, sender, "🇬🇧 *UK Mode Enabled!* Send #RESET to start the UK onboarding flow.");
+            replied = true;
+            return;
+        }
 
-    const aiState = {
-      incomeType: userData.incomeType || null,
-      monthlyIncome: userData.monthlyIncome || null,
-      hourlyRate: userData.hourlyRate || null,
-      weeklyHours: userData.weeklyHours || null,
-      payFrequency: userData.payFrequency || null,
-      currentBalance: currentBalance,
-      totalToday: totalDia,
-      totalMonth: totalMes,
-      totalWeek: totals.totalSemana,
-      healthRatioMonth: totals.healthRatioMonth,
-      healthRatioWeek: totals.healthRatioWeek,
-      lastAction: userData.lastAction || 'none',
-      onboardingStep: currentStep, 
-      dashboard_link: `https://penny-finance.vercel.app/?token=${await generateUserToken(sender)}`
-    };
-
-    let transactionData = null;
-    try {
-      // Pass the explicit objective to the AI
-      transactionData = await extractFinancialData(text, aiState, isBrazil, currentStep);
-    } catch (aiError) {
-      console.error('[Background] ⚠️ OpenAI failed:', aiError.message);
-      if (source === 'whatsapp-evolution') {
-        const errorMsg = isBrazil 
-          ? `❌ *Ops!* Tive um problema técnico ao processar sua mensagem. Tente novamente em instantes.`
-          : `❌ *Oops!* I had a technical problem processing your message. Please try again in a moment.`;
-        await sendMessage(instance, sender, errorMsg);
-      }
-      return;
-    }
-
-    if (!transactionData || transactionData.intent === 'NO_ACTION') {
-      console.log(`[Background] ℹ️ AI decided NO_ACTION for: ${text}`);
-      if (transactionData?.response_message && source === 'whatsapp-evolution') {
-        await sendMessage(instance, sender, transactionData.response_message);
-      }
-      return;
-    }
-    
-    // --- EXECUTE AI DECISION ---
-    console.log(`[Background] 🧠 Intent: ${transactionData.intent}`);
-
-    // Update user state (General Interaction)
-    const updateData = { 
-      lastInteraction: new Date().toISOString(),
-      lastAction: transactionData.intent,
-      updatedAt: new Date().toISOString()
-    };
-
-    // No longer trust AI to decide "next_question" - we calculate it next turn
-    await userRef.set(updateData, { merge: true });
-
-    if (transactionData.intent === 'SET_INCOME_TYPE') {
-      const type = transactionData.income_type;
-      console.log(`[Background] 💰 Value extracted: incomeType = ${type}`);
-      await userRef.update({ incomeType: type });
-    }
-
-    if (transactionData.intent === 'SET_HOURLY_RATE') {
-        const rate = parseFloat(transactionData.hourly_rate);
-        console.log(`[Background] 💰 Value extracted: hourlyRate = ${rate}`);
-        await userRef.update({ hourlyRate: rate });
-    }
-
-    if (transactionData.intent === 'SET_WEEKLY_HOURS') {
-        const hours = parseFloat(transactionData.weekly_hours);
-        console.log(`[Background] 💰 Value extracted: weeklyHours = ${hours}`);
-        const rate = userData.hourlyRate || 0;
-        const estMonthly = (rate * hours * 4.33);
-        await userRef.update({ 
-            weeklyHours: hours,
-            estimatedMonthlyIncome: estMonthly,
-            monthlyIncome: estMonthly
-        });
-    }
-
-    if (transactionData.intent === 'SET_MONTHLY_INCOME') {
-      const income = parseFloat(transactionData.monthly_income);
-      console.log(`[Background] 💰 Value extracted: monthlyIncome = ${income}`);
-      await userRef.update({ 
-          monthlyIncome: income,
-          incomeType: 'monthly'
-      });
-    }
-
-    if (transactionData.intent === 'SET_CURRENT_BALANCE') {
-        const reportedBalance = parseFloat(transactionData.amount);
-        console.log(`[Background] 🏦 Setting Initial Balance: ${reportedBalance}`);
-        
-        // 1. Calculate Adjustment
-        // We use monthlyIncome as the "theoretical start" and adjust to reach the reportedBalance.
-        const currentTotals = await calculateUserTotals(userRef, isBrazil);
-        const incomeAsRef = userData.monthlyIncome || userData.estimatedMonthlyIncome || 0;
-        
-        // Current balance in system is just totalIncome - totalExpenses.
-        // Onboarding creates NO income yet, so currentBalance is 0.
-        // We want to force it to reportedBalance by creating an adjustment.
-        // If they have £200, and they should have had £2598 (income), they spent £2398.
-        const diff = incomeAsRef - reportedBalance;
-        
-        console.log(`[Background] ⚖️ Creating bridge income: ${incomeAsRef}`);
-        await userRef.collection('transactions').add({
-            amount: incomeAsRef,
-            type: 'income',
-            category: 'Onboarding',
-            description: isBrazil ? 'Renda Inicial' : 'Initial Income',
-            createdAt: new Date().toISOString()
-        });
-
-        if (diff !== 0) {
-            console.log(`[Background] ⚖️ Creating adjustment transaction: ${diff}`);
-            await userRef.collection('transactions').add({
-                amount: Math.abs(diff),
-                type: diff > 0 ? 'expense' : 'income',
-                category: 'Adjustment',
-                description: isBrazil ? 'Ajuste de Saldo Inicial' : 'Initial Balance Adjustment',
-                createdAt: new Date().toISOString()
+        if (upperText === '#RESET') {
+            await userRef.update({
+                monthlyIncome: admin.firestore.FieldValue.delete(),
+                hourlyRate: admin.firestore.FieldValue.delete(),
+                weeklyHours: admin.firestore.FieldValue.delete(),
+                incomeType: admin.firestore.FieldValue.delete(),
+                payFrequency: admin.firestore.FieldValue.delete(),
+                payDay: admin.firestore.FieldValue.delete(),
+                lastPayDate: admin.firestore.FieldValue.delete(),
+                nextEstimatedPayDate: admin.firestore.FieldValue.delete(),
+                lastProactivePrompt: admin.firestore.FieldValue.delete(),
+                lastAction: admin.firestore.FieldValue.delete(),
+                onboarding_complete: false,
+                hasSyncedBalance: admin.firestore.FieldValue.delete()
             });
+            const txs = await userRef.collection('transactions').get();
+            const batch = db.batch();
+            txs.docs.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+
+            const reply = isBrazil 
+                ? "🗑️ *Perfil resetado!* Vamos recomeçar do zero. Me mande um 'Oi' para iniciar!"
+                : "🗑️ *Profile reset!* I've cleared everything. Send me a 'Hi' to start fresh!";
+            await sendMessage(instance, sender, reply);
+            replied = true;
+            return;
         }
         
-        await userRef.update({ 
-            onboarding_step: "ACTIVE",
-            onboarding_complete: true,
-            hasSyncedBalance: true,
-            lastAction: 'ONBOARDING_COMPLETE'
-        });
-    }
-
-    if (transactionData.intent === 'SET_WEEKLY_HOURS_OVERRIDE') {
-        const hours = parseFloat(transactionData.weekly_hours);
-        console.log(`[Background] 🕒 Setting weekly hours override: ${hours}`);
-        await userRef.update({ currentWeekHoursOverride: hours });
-    }
-
-    if (transactionData.intent === 'SET_PAYDAY_TODAY') {
-        const now = new Date();
-        const nextDate = calculateNextPayDate(now, userData.payFrequency || 'monthly');
-        console.log(`[Background] 💰 Payday recorded today. Next estimated: ${nextDate.toISOString()}`);
-        await userRef.update({ 
-            lastPayDate: now.toISOString(),
-            nextEstimatedPayDate: nextDate.toISOString()
-        });
-    }
-
-    if (transactionData.intent === 'SET_PAY_FREQUENCY') {
-      const frequency = transactionData.pay_frequency;
-      console.log(`[Background] 📅 Setting pay frequency: ${frequency}`);
-      await userRef.update({ payFrequency: frequency });
-    }
-
-    if (transactionData.intent === 'SET_PAYDAY') {
-      const day = parseInt(transactionData.payday);
-      console.log(`[Background] 📅 Setting payday: ${day}`);
-      await userRef.update({ payDay: day });
-    }
-
-    if (transactionData.intent === 'ADD_BALANCE') {
-      const amount = parseFloat(transactionData.balance_change || 0);
-      console.log(`[Background] 💰 Adding balance: ${amount}`);
-      await userRef.collection('transactions').add({
-        amount: amount,
-        type: 'income',
-        category: 'General',
-        description: text,
-        createdAt: new Date().toISOString(),
-        intent: 'ADD_BALANCE'
-      });
-    }
-
-    if (transactionData.intent === 'REMOVE_EXPENSE' || transactionData.remove_expense) {
-      console.log(`[Background] 🗑️ Removing last expense for ${sender}...`);
-      const lastTxSnap = await userRef.collection('transactions')
-        .orderBy('createdAt', 'desc')
-        .limit(1)
-        .get();
-      
-      if (!lastTxSnap.empty) {
-        await lastTxSnap.docs[0].ref.delete();
-        console.log(`[Background] ✅ Deleted transaction: ${lastTxSnap.docs[0].id}`);
-      }
-    }
-
-    if (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES') {
-      const expenses = transactionData.expenses || [];
-      // Support the single amount/category if expenses array is empty
-      if (expenses.length === 0 && transactionData.amount) {
-        expenses.push({ 
-          amount: transactionData.amount, 
-          category: transactionData.category || 'General',
-          item: text.length > 50 ? text.substring(0, 50) + "..." : text
-        });
-      }
-
-      console.log(`[Background] 💸 Adding ${expenses.length} transaction(s) for ${transactionData.intent}`);
-      
-      for (const exp of expenses) {
-        await userRef.collection('transactions').add({
-          amount: parseFloat(exp.amount),
-          type: 'expense',
-          category: exp.category || 'General',
-          description: exp.item || (isBrazil ? 'Gasto registrado' : 'Recorded expense'),
-          createdAt: new Date().toISOString(),
-          intent: 'ADD_EXPENSE' // Store as normal expense for dashboard compatibility
-        });
-      }
-    }
-
-    if (transactionData.intent === 'CORRECTION') {
-      console.log(`[Background] ✏️ Handling CORRECTION...`);
-      // Simpler correction for now: just record what the AI extracted if it's there
-      if (transactionData.monthly_income) await userRef.update({ monthlyIncome: transactionData.monthly_income });
-      if (transactionData.payday) await userRef.update({ payDay: transactionData.payday });
-    }
-
-    if (transactionData.intent === 'RESET') {
-      console.log(`[Background] 🗑️ Resetting profile for ${sender}...`);
-      await userRef.update({
-        monthlyIncome: admin.firestore.FieldValue.delete(),
-        hourlyRate: admin.firestore.FieldValue.delete(),
-        weeklyHours: admin.firestore.FieldValue.delete(),
-        incomeType: admin.firestore.FieldValue.delete(),
-        payFrequency: admin.firestore.FieldValue.delete(),
-        payDay: admin.firestore.FieldValue.delete(),
-        lastPayDate: admin.firestore.FieldValue.delete(),
-        nextEstimatedPayDate: admin.firestore.FieldValue.delete(),
-        lastProactivePrompt: admin.firestore.FieldValue.delete(),
-        lastAction: admin.firestore.FieldValue.delete(),
-        onboarding_step: "INCOME_TYPE",
-        onboarding_complete: false,
-        hasSyncedBalance: admin.firestore.FieldValue.delete()
-      });
-      
-      const txs = await userRef.collection('transactions').get();
-      const batch = db.batch();
-      txs.docs.forEach(doc => batch.delete(doc.ref));
-      await batch.commit();
-
-      if (!transactionData.response_message && source === 'whatsapp-evolution') {
-        const reply = isBrazil 
-          ? `🗑️ *Perfil resetado!* Vamos recomeçar do zero. Como você recebe sua renda? 1️⃣ Por hora, 2️⃣ Semanal, 3️⃣ Quinzenal, 4️⃣ Mensal / Contrato`
-          : `🗑️ *Profile reset!* Let's start from scratch. How do you receive your income? 1️⃣ Hourly, 2️⃣ Weekly, 3️⃣ Fortnightly, 4️⃣ Monthly / Contract`;
-        await sendMessage(instance, sender, reply);
-      }
-    }
-
-    // --- LOW BALANCE ANXIETY MODE ---
-    // Only trigger if onboarding is complete and it's an expense
-    if (userData.onboarding_complete && !isBrazil && (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES')) {
-        const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil, userData);
-        const todayStr = new Date().toISOString().split('T')[0];
+        // --- DATA CALC ---
+        const totals = await calculateUserTotals(userRef, isBrazil, userData);
         
-        if (newBalance < 50 && userData.lastLowBalanceAlertDate !== todayStr) {
-            console.log(`[Security] ⚠️ Low balance alert for ${sender}: £${newBalance}`);
-            const alertMsg = "⚠️ Your balance is getting low (£" + newBalance.toFixed(2) + "). Might be worth taking it easy today.";
-            await sendMessage(instance, sender, alertMsg);
-            await userRef.update({ lastLowBalanceAlertDate: todayStr });
-        }
-    }
+        const determineCurrentStep = (data) => {
+            if (!data.onboarding_complete) {
+                if (!data.incomeType) return "INCOME_TYPE";
+                if (data.incomeType === 'hourly') {
+                    if (!data.hourlyRate) return "ASK_HOURLY_RATE";
+                    if (!data.weeklyHours) return "ASK_WEEKLY_HOURS";
+                } else {
+                    if (!data.monthlyIncome) return "ASK_MONTHLY_INCOME";
+                }
+                if (!data.hasSyncedBalance) return "INITIAL_BALANCE";
+            }
+            return "ACTIVE";
+        };
 
-    // --- RESPOND ---
-    if (source === 'whatsapp-evolution' && transactionData.response_message) {
-      // Re-calculate totals for the final message if needed, or use AI message
-      // The user wants to use the response_message from AI.
-      await sendMessage(instance, sender, transactionData.response_message);
-    }
+        const currentStep = determineCurrentStep(userData);
+        const aiState = {
+          incomeType: userData.incomeType || null,
+          monthlyIncome: userData.monthlyIncome || null,
+          hourlyRate: userData.hourlyRate || null,
+          weeklyHours: userData.weeklyHours || null,
+          payFrequency: userData.payFrequency || null,
+          currentBalance: totals.currentBalance,
+          totalToday: totals.totalDia,
+          totalMonth: totals.totalMes,
+          totalWeek: totals.totalSemana,
+          healthRatioMonth: totals.healthRatioMonth,
+          healthRatioWeek: totals.healthRatioWeek,
+          lastAction: userData.lastAction || 'none',
+          onboardingStep: currentStep, 
+          dashboard_link: `https://penny-finance.vercel.app/?token=${await generateUserToken(sender)}`
+        };
+
+        // --- AI CALL ---
+        const transactionData = await extractFinancialData(text, aiState, isBrazil, currentStep);
+        
+        if (replied) return;
+
+        if (!transactionData || transactionData.intent === 'NO_ACTION') {
+          if (transactionData?.response_message && source === 'whatsapp-evolution') {
+            await sendMessage(instance, sender, transactionData.response_message);
+          }
+          replied = true;
+          return;
+        }
+
+        // --- EXECUTE DECISION ---
+        await userRef.set({ 
+          lastInteraction: new Date().toISOString(),
+          lastAction: transactionData.intent,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        // Intent Logic
+        if (transactionData.intent === 'SET_INCOME_TYPE') await userRef.update({ incomeType: transactionData.income_type });
+        if (transactionData.intent === 'SET_HOURLY_RATE') await userRef.update({ hourlyRate: parseFloat(transactionData.hourly_rate) });
+        if (transactionData.intent === 'SET_WEEKLY_HOURS') {
+            const hours = parseFloat(transactionData.weekly_hours);
+            const rate = userData.hourlyRate || 0;
+            const estMonthly = (rate * hours * 4.33);
+            await userRef.update({ weeklyHours: hours, monthlyIncome: estMonthly });
+        }
+        if (transactionData.intent === 'SET_MONTHLY_INCOME') await userRef.update({ monthlyIncome: parseFloat(transactionData.monthly_income), incomeType: 'monthly' });
+        
+        if (transactionData.intent === 'SET_CURRENT_BALANCE') {
+            const reportedBalance = parseFloat(transactionData.amount);
+            const incomeAsRef = userData.monthlyIncome || 0;
+            const diff = incomeAsRef - reportedBalance;
+            await userRef.collection('transactions').add({ amount: incomeAsRef, type: 'income', category: 'Onboarding', description: isBrazil ? 'Renda Inicial' : 'Initial Income', createdAt: new Date().toISOString() });
+            if (diff !== 0) {
+                await userRef.collection('transactions').add({ amount: Math.abs(diff), type: diff > 0 ? 'expense' : 'income', category: 'Adjustment', description: isBrazil ? 'Ajuste de Saldo Inicial' : 'Initial Balance Adjustment', createdAt: new Date().toISOString() });
+            }
+            await userRef.update({ onboarding_complete: true, hasSyncedBalance: true });
+        }
+
+        if (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES') {
+            const expenses = transactionData.expenses || [];
+            if (expenses.length === 0 && transactionData.amount) {
+              expenses.push({ amount: transactionData.amount, category: transactionData.category || 'General', item: text });
+            }
+            for (const exp of expenses) {
+              await userRef.collection('transactions').add({
+                amount: parseFloat(exp.amount),
+                type: 'expense',
+                category: exp.category || 'General',
+                description: exp.item || (isBrazil ? 'Gasto registrado' : 'Recorded expense'),
+                createdAt: new Date().toISOString(),
+                intent: 'ADD_EXPENSE'
+              });
+            }
+        }
+        
+        // ... (other intents like REMOVE_EXPENSE, CORRECTION etc could be re-added if needed, but keeping core for now)
+        if (transactionData.intent === 'REMOVE_EXPENSE') {
+            const lastTxSnap = await userRef.collection('transactions').orderBy('createdAt', 'desc').limit(1).get();
+            if (!lastTxSnap.empty) await lastTxSnap.docs[0].ref.delete();
+        }
+
+        if (transactionData.intent === 'SET_WEEKLY_HOURS_OVERRIDE') {
+            await userRef.update({ currentWeekHoursOverride: parseFloat(transactionData.weekly_hours) });
+        }
+
+        if (transactionData.intent === 'SET_PAYDAY_TODAY') {
+            const now = new Date();
+            const nextDate = calculateNextPayDate(now, userData.payFrequency || 'monthly');
+            await userRef.update({ lastPayDate: now.toISOString(), nextEstimatedPayDate: nextDate.toISOString() });
+        }
+
+        if (transactionData.intent === 'SET_PAY_FREQUENCY') await userRef.update({ payFrequency: transactionData.pay_frequency });
+        if (transactionData.intent === 'SET_PAYDAY') await userRef.update({ payDay: parseInt(transactionData.payday) });
+        
+        if (transactionData.intent === 'ADD_BALANCE') {
+          await userRef.collection('transactions').add({
+            amount: parseFloat(transactionData.balance_change || 0),
+            type: 'income',
+            category: 'General',
+            description: text,
+            createdAt: new Date().toISOString(),
+            intent: 'ADD_BALANCE'
+          });
+        }
+
+        if (transactionData.intent === 'CORRECTION') {
+          if (transactionData.monthly_income) await userRef.update({ monthlyIncome: transactionData.monthly_income });
+          if (transactionData.payday) await userRef.update({ payDay: transactionData.payday });
+        }
+
+        // --- LOW BALANCE ANXIETY MODE ---
+        if (userData.onboarding_complete && !isBrazil && (transactionData.intent === 'ADD_EXPENSE' || transactionData.intent === 'MULTIPLE_EXPENSES')) {
+            const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil, userData);
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (newBalance < 50 && userData.lastLowBalanceAlertDate !== todayStr) {
+                await sendMessage(instance, sender, "⚠️ Your balance is getting low (£" + newBalance.toFixed(2) + ").");
+                await userRef.update({ lastLowBalanceAlertDate: todayStr });
+            }
+        }
+
+        // --- FINAL RESPONSE ---
+        if (source === 'whatsapp-evolution' && transactionData.response_message) {
+          await sendMessage(instance, sender, transactionData.response_message);
+        }
+        replied = true;
+    })();
+
+    await Promise.race([executionPromise, timeoutPromise]);
 
   } catch (error) {
-    console.error('[Background] ❌ Error processing message:', error);
+    if (replied) return;
+    replied = true;
+    console.error(`[Background] ❌ Process Error: ${error.message}`);
+    const errorMsg = isBrazil 
+      ? `❌ *Nossos servidores estão com problemas*, espere um momento.`
+      : `❌ *Our servers are having trouble*, please wait a moment.`;
+    await sendMessage(instance, sender, errorMsg);
+  } finally {
+    if (source === 'whatsapp-evolution') {
+      sendPresence(instance, sender, "available").catch(() => {});
+    }
   }
 }
 
