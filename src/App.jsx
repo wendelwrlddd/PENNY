@@ -1,7 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
 import { ShieldCheck, Globe, CheckCircle2, Users, Sparkles, PartyPopper, MessageCircle } from 'lucide-react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 import './index.css';
 
 // Firebase Client Configuration
@@ -385,15 +390,59 @@ function App() {
 
   // --- Components ---
 
-  const LandingPage = () => (
-    <div className="min-h-screen bg-black text-white selection:bg-primary selection:text-black overflow-x-hidden">
+  const LandingPage = () => {
+    const container = useRef();
+
+    useGSAP(() => {
+      // Hero Animation
+      const tl = gsap.timeline();
+      tl.from(".hero-content > *", {
+        y: 60,
+        opacity: 0,
+        duration: 0.8,
+        stagger: 0.2,
+        ease: "power4.out"
+      });
+
+      // Feature Cards
+      gsap.from(".feature-card", {
+        scrollTrigger: {
+          trigger: ".feature-card",
+          start: "top 80%",
+        },
+        y: 50,
+        opacity: 0,
+        duration: 0.6,
+        stagger: 0.1,
+        ease: "power2.out"
+      });
+
+      // Pricing Section
+      gsap.from(".pricing-card", {
+        scrollTrigger: {
+          trigger: ".pricing-card",
+          start: "top 80%",
+        },
+        scale: 0.9,
+        opacity: 0,
+        duration: 0.8,
+        stagger: 0.2,
+        ease: "back.out(1.7)"
+      });
+    }, { scope: container });
+
+    return (
+    <div ref={container} className="min-h-screen bg-black text-white selection:bg-primary selection:text-black overflow-x-hidden">
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 glass border-b border-white/5 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-black font-bold">P</span>
-            </div>
+            <img 
+              src="/logo.png" 
+              alt="Penny Logo" 
+              className="w-8 h-8 object-contain"
+              style={{ filter: 'invert(1) hue-rotate(180deg)' }}
+            />
             <span className="text-xl font-bold tracking-tighter">Penny</span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
@@ -411,9 +460,17 @@ function App() {
       <section className="relative pt-32 pb-20 px-6">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-primary/10 blur-[120px] rounded-full pointer-events-none"></div>
         <div className="max-w-7xl mx-auto flex flex-col items-center gap-16">
-          <div className="max-w-4xl text-center">
-            <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6">
-              {t.heroTitle.split('finances')[0]}<span className="text-primary italic">{isBrazil ? "finanças" : "finances"}</span>{t.heroTitle.split('finances')[1]}
+          <div className="max-w-4xl text-center hero-content">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full text-primary text-xs font-bold mb-6">
+              <Sparkles className="w-3 h-3" />
+              <span>THE FUTURE OF FINANCE IS HERE</span>
+            </div>
+            <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6 hero-title">
+              {isBrazil ? (
+                <>Gerencie suas <span className="text-primary italic">finanças</span> agora, para um futuro mais tranquilo</>
+              ) : (
+                <>Let's manage your <span className="text-primary italic">finances</span> now, to make the future easier</>
+              )}
             </h1>
             <p className="text-xl text-gray-400 max-w-2xl mx-auto mb-6 leading-relaxed">
               {t.heroDesc}
@@ -459,7 +516,7 @@ function App() {
               { title: t.feature2Title, desc: t.feature2Desc, icon: <Globe className="w-6 h-6 text-primary" /> },
               { title: t.feature3Title, desc: t.feature3Desc, icon: <CheckCircle2 className="w-6 h-6 text-primary" /> }
             ].map((f, i) => (
-              <div key={i} className="p-8 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 transition-colors group">
+              <div key={i} className="feature-card p-8 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 transition-colors group">
                 <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                   {f.icon}
                 </div>
@@ -481,7 +538,7 @@ function App() {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {/* Monthly Plan */}
-            <div className="p-10 bg-white/5 border border-white/10 rounded-[32px] hover:border-white/20 transition-all flex flex-col justify-between">
+            <div className="pricing-card p-10 bg-white/5 border border-white/10 rounded-[32px] hover:border-white/20 transition-all flex flex-col justify-between">
               <div>
                 <span className="text-primary text-xs font-bold uppercase tracking-widest">{t.monthly}</span>
                 <div className="mt-4 flex items-baseline gap-1">
@@ -497,13 +554,16 @@ function App() {
                   <li className="flex items-center gap-3 text-gray-400"><CheckCircle2 className="w-5 h-5 text-primary" /> {isBrazil ? "Resumo Diário Opcional" : "Optional Daily Summary"}</li>
                 </ul>
               </div>
-              <button className="mt-12 w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-bold transition-all">
+              <button 
+                onClick={() => window.open('https://wa.me/557391082831?text=%23PREMIUM', '_blank')}
+                className="mt-12 w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-bold transition-all"
+              >
                 {t.selectPlan}
               </button>
             </div>
 
             {/* Annual Plan - Special Offer */}
-            <div className="relative p-10 bg-primary/10 border-2 border-primary rounded-[32px] shadow-[0_0_40px_rgba(34,197,94,0.2)] transition-all hover:scale-[1.02] flex flex-col justify-between">
+            <div className="pricing-card relative p-10 bg-primary/10 border-2 border-primary rounded-[32px] shadow-[0_0_40px_rgba(34,197,94,0.2)] transition-all hover:scale-[1.02] flex flex-col justify-between">
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-primary text-black text-xs font-black rounded-full shadow-lg whitespace-nowrap">
                 {t.limitedOffer}
               </div>
@@ -524,7 +584,10 @@ function App() {
                   <li className="flex items-center gap-3 text-white"><CheckCircle2 className="w-5 h-5 text-primary" /> {isBrazil ? "Suporte VIP 24/7" : "VIP 24/7 Support"}</li>
                 </ul>
               </div>
-              <button className="mt-12 w-full py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all">
+              <button 
+                onClick={() => window.open('https://wa.me/557391082831?text=%23PREMIUM', '_blank')}
+                className="mt-12 w-full py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
+              >
                 {t.selectPlan}
               </button>
             </div>
@@ -553,9 +616,12 @@ function App() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between gap-12">
           <div className="max-w-xs">
              <div className="flex items-center gap-2 mb-6">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <span className="text-black font-bold">P</span>
-                </div>
+                <img 
+                  src="/logo.png" 
+                  alt="Penny Logo" 
+                  className="w-8 h-8 object-contain"
+                  style={{ filter: 'invert(1) hue-rotate(180deg)' }}
+                />
                 <span className="text-xl font-bold tracking-tighter uppercase">Penny</span>
              </div>
              <p className="text-sm text-gray-500 leading-relaxed">{t.footerDesc}</p>
@@ -571,7 +637,8 @@ function App() {
         </div>
       </footer>
     </div>
-  );
+    );
+  };
 
   const Dashboard = () => (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -590,9 +657,12 @@ function App() {
         <aside className="hidden lg:flex w-64 h-screen fixed bg-black border-r border-white/5 p-6 flex-col justify-between">
           <div>
             <div className="flex items-center gap-3 mb-12">
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.3)]">
-                <span className="text-black font-bold text-xl">P</span>
-              </div>
+              <img 
+                src="/logo.png" 
+                alt="Penny Logo" 
+                className="w-10 h-10 object-contain"
+                style={{ filter: 'invert(1) hue-rotate(180deg)' }}
+              />
               <span className="text-2xl font-bold">Penny</span>
             </div>
             <nav className="space-y-2">

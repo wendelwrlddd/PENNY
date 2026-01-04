@@ -5,8 +5,8 @@ dotenv.config();
 
 const CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const SECRET = process.env.PAYPAL_SECRET;
-const BASE_URL = 'https://api-m.sandbox.paypal.com'; // Depois mudaremos para prod
-const PLAN_ID_BR = 'P-2T643904BL0932302NFNIH6I'; 
+const BASE_URL = 'https://api-m.paypal.com'; // MUDADO PARA LIVE
+const PLAN_ID_BR = 'P-45G70889433490700NFNJPVQ'; 
 
 async function getAccessToken() {
     if (!CLIENT_ID || !SECRET) return null;

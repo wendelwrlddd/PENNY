@@ -6,8 +6,7 @@ dotenv.config();
 // COLOQUE SUAS CHAVES NO .ENV
 const CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const SECRET = process.env.PAYPAL_SECRET;
-
-const BASE_URL = 'https://api-m.sandbox.paypal.com'; // Sandbox
+const BASE_URL = 'https://api-m.paypal.com'; // LIVE
 
 async function createPlan() {
     if (!CLIENT_ID || !SECRET) {
