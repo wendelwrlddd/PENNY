@@ -22,7 +22,10 @@ const ALLOWED_NUMBERS = [
   '557391082831', // User Primary Number
 ];
 
-app.use(cors());
+app.use(cors({
+  origin: ['https://penny-finance.vercel.app', 'http://localhost:5173', 'http://localhost:3000'],
+  credentials: true
+}));
 app.use(cookieParser());
 // --- NEW: Raw Body Middleware for Webhook ---
 // This allows us to see the original payload before Express parses it
@@ -157,8 +160,8 @@ app.post('/auth/login', async (req, res) => {
     // Defina o cookie penny_session
     res.cookie('penny_session', sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Strict',
+      secure: true, // Deve ser true para SameSite: None
+      sameSite: 'None', 
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 dias
     });
 
