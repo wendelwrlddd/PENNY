@@ -12,6 +12,11 @@ import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
 import { sendMessage, logoutInstance, deleteInstance, sendPresence } from './lib/evolution.js';
 import { generateSubscriptionLink } from './services/paypalService.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -24,7 +29,7 @@ const ALLOWED_NUMBERS = [
 ];
 
 app.use(cors({
-  origin: ['https://penny-finance.vercel.app', 'http://localhost:5173', 'http://localhost:3000'],
+  origin: ['https://penny-finance.vercel.app', 'https://penny-finance-backend.fly.dev', 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(cookieParser());
@@ -33,6 +38,9 @@ app.use(cookieParser());
 app.use('/webhook', express.text({ type: 'application/json' }));
 
 app.use(express.json());
+
+// --- SERVE REACT STATIC FILES ---
+app.use(express.static(path.join(__dirname, 'client/dist')));
 
 // Logging middleware
 app.use((req, res, next) => {
@@ -181,9 +189,46 @@ app.post('/auth/login', async (req, res) => {
 });
 
 /**
+ * 🔗 Gerar Link do PayPal via Web Funnel
+ * Payload: { phoneNumber: "55..." }
+ */
+app.post('/api/pay/generate-link', async (req, res) => {
+  let { phoneNumber } = req.body;
+
+  if (!phoneNumber) {
+    return res.status(400).json({ error: 'Número de telefone é obrigatório.' });
+  }
+
+  // Sanitização: Manter apenas números
+  const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+  // Validação mínima (ex: código do país + no mínimo 8 dígitos)
+  if (cleanPhone.length < 10) {
+    return res.status(400).json({ error: 'Número de telefone inválido. Certifique-se de incluir o código do país.' });
+  }
+
+  try {
+    console.log(`[API] 🔗 Gerando link do PayPal para: ${cleanPhone}`);
+    const link = await generateSubscriptionLink(cleanPhone);
+
+    if (link.startsWith('http')) {
+      res.json({ url: link });
+    } else {
+      res.status(500).json({ error: link });
+    }
+  } catch (error) {
+    console.error('❌ Generate Link Error:', error.message);
+    res.status(500).json({ error: 'Erro interno ao gerar link de pagamento.' });
+  }
+});
+
+/**
  * Rota /api/me (Validação)
  */
 app.get('/api/me', authMiddleware, async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database service unavailable' });
+  }
   try {
     const userRef = db.collection('usuarios').doc(req.user.phoneNumber);
     const userSnap = await userRef.get();
@@ -1083,20 +1128,42 @@ function calculateNextPayDate(lastPay, frequency) {
 }
 
 // Start Server
-app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// Serve static files from the 'client/dist' directory
+app.use(express.static(path.join(__dirname, 'client/dist'))); 
+
+// Servir a pasta original do Quiz em uma URL separada
+app.use('/original-quiz', express.static(path.join(__dirname, 'quiz')));
+
+// Fallback para servir o index.html (Catch-all middleware)
+app.use((req, res, next) => {
+  // Ignorar rotas de API, Auth e arquivos estáticos
+  if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.includes('.')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
+});
+
+app.listen(PORT, () => { // Changed app.listen structure
+  console.log(`🚀 Penny Finance Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
   console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   
   // Migration for UK users
-  await runMigration();
+  runMigration(); // Removed await as it's not an async function anymore, or wrap in IIFE if needed.
+                  // Assuming runMigration is now called without await in this context.
+                  // If runMigration is truly async and needs to complete before other things,
+                  // this part might need adjustment (e.g., an IIFE or moving it to a separate init function).
 
   // Initial run in 10 seconds to not block startup
   setTimeout(checkProactiveMessages, 10000);
 });
 
 async function runMigration() {
+    if (!db) {
+        console.warn('⚠️ [Migration] Skip: Firestore (db) not initialized.');
+        return;
+    }
     console.log('🛠️ [Migration] Checking for users to upgrade to UK Mode...');
     try {
         const usersSnapshot = await db.collection('usuarios').get();

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manchester Money Personality Test | Is your money leaking?</title>
+    <meta name="description" content="Discover where your pounds are disappearing in 60 seconds.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Use GSAP for high performance animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <!-- Lucide Icons for a professional aesthetic -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="cat-EDU">
+    <div id="app">
+        <!-- WELCOME SCREEN -->
+        <main id="screen-welcome" class="screen active">
+            <div class="glass-card">
+                <div class="logo-wrapper" style="margin-bottom: 30px;">
+                    <span style="font-weight: 800; font-size: 1.5rem; color: var(--penny-green);">Penny.</span>
+                </div>
+                <h1 style="font-size: 2.2rem; margin-bottom: 20px; line-height: 1.1;">Manchester Money Personality Test</h1>
+                <p style="color: var(--text-dim); margin-bottom: 40px; font-size: 1.1rem;">Descubra para onde suas libras estão fugindo em 60 segundos.</p>
+                <button class="btn-primary" id="start-btn">COMEÇAR O DESAFIO</button>
+            </div>
+        </main>
+
+        <!-- QUIZ SCREEN -->
+        <main id="screen-quiz" class="screen">
+            <div class="progress-wrapper">
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progress-bar"></div>
+                </div>
+                <span class="progress-text" id="progress-text">PERGUNTA 1 DE 15</span>
+            </div>
+            
+            <div class="glass-card" id="quiz-card">
+                <div id="question-icon-wrapper" class="question-icon-wrapper">
+                    <i id="question-lucide" data-lucide="clock" class="icon-main"></i>
+                </div>
+                <h2 id="question-text" class="question-text">Pergunta do Quiz...</h2>
+                
+                <!-- Chart will be injected here if needed -->
+                <div id="chart-area" class="chart-container" style="display: none;">
+                    <div class="chart-bar-wrapper">
+                        <div class="chart-label"><span>Quem chuta</span><span style="color:#ff4d4d">£0 extras</span></div>
+                        <div class="chart-bar-bg"><div id="bar-red" class="chart-bar-fill red"></div></div>
+                    </div>
+                    <div class="chart-bar-wrapper">
+                        <div class="chart-label"><span>Quem anota</span><span style="color:var(--penny-green)">+£300/mês</span></div>
+                        <div class="chart-bar-bg"><div id="bar-green" class="chart-bar-fill green"></div></div>
+                    </div>
+                </div>
+
+                <div id="options-container" class="options-grid">
+                    <!-- Options injected via JS -->
+                </div>
+            </div>
+        </main>
+
+        <!-- LOADING SCREEN (Hacker Style) -->
+        <main id="screen-loading" class="screen">
+            <div class="glass-card hacker-loading">
+                <div class="hacker-title" id="hacker-title">STATUS: SYSTEM_ANALYSIS_INIT</div>
+                <ul class="checklist" id="checklist">
+                    <!-- Check items injected via JS -->
+                </ul>
+                <div class="loader-bar">
+                    <div class="loader-fill" id="hacker-loader"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- RESULT SCREEN -->
+        <main id="screen-result" class="screen">
+            <div class="glass-card result-page-card">
+                <div class="diagnostic-header">
+                    <div class="badge-mini">DIAGNÓSTICO FINAL</div>
+                    <h2 id="result-profile" class="result-profile">The NQ Legend</h2>
+                </div>
+                
+                <div id="result-text" class="result-body-text">
+                    <!-- Result text injected here -->
+                </div>
+
+                <!-- HOW IT WORKS SECTION -->
+                <div class="section-how-it-works">
+                    <h3 class="section-title">How It Works</h3>
+                    <div class="steps-grid">
+                        <div class="step-item">
+                            <div class="step-icon"><i data-lucide="banknote"></i></div>
+                            <div class="step-content">
+                                <strong>You Spend</strong>
+                                <p>Coffee, beer or shop.</p>
+                            </div>
+                        </div>
+                        <div class="step-item">
+                            <div class="step-icon"><i data-lucide="message-square"></i></div>
+                            <div class="step-content">
+                                <strong>You Text</strong>
+                                <p>Tell Penny: "Spent £15"</p>
+                            </div>
+                        </div>
+                        <div class="step-item">
+                            <div class="step-icon"><i data-lucide="check-circle-2"></i></div>
+                            <div class="step-content">
+                                <strong>Done</strong>
+                                <p>Penny does the rest.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="how-subtext">Simple as that. No apps. No passwords. Just say "Hi".</p>
+                </div>
+
+                <!-- NEW POWER OFFER CARD SECTION -->
+                <div class="power-offer-card">
+                    <!-- Top: Urgency Header -->
+                    <div class="offer-header">
+                        <p class="offer-unlocked">Exclusive Offer for Manchester Users Unlocked</p>
+                        <div class="timer-badge">
+                            <span class="timer-label">Valid for:</span>
+                            <span class="timer-clock" id="offer-timer">05:00:00</span>
+                        </div>
+                    </div>
+
+                    <!-- Middle: Value Stack -->
+                    <div class="value-stack">
+                        <h4 class="value-stack-title">What you get for the price of a pint:</h4>
+                        <ul class="value-list">
+                            <li><i data-lucide="check-circle" class="val-check"></i> Unlimited Messages & Tracking</li>
+                            <li><i data-lucide="check-circle" class="val-check"></i> Real-time WhatsApp Dashboard</li>
+                            <li><i data-lucide="check-circle" class="val-check"></i> Weekly Financial Health Reports</li>
+                            <li><i data-lucide="check-circle" class="val-check"></i> Smart Auto-Categorization (AI)</li>
+                            <li><i data-lucide="check-circle" class="val-check"></i> Priority Support 24/7</li>
+                            <li><i data-lucide="check-circle" class="val-check"></i> Bank-Grade Security</li>
+                        </ul>
+                    </div>
+
+                    <!-- Bottom: Price & CTA -->
+                    <div class="offer-footer">
+                        <div class="price-anchoring">
+                            <span class="old-full-price">~~£59.99/year~~</span>
+                            <span class="new-monthly-price">£9.99 / YEAR</span>
+                        </div>
+                        
+                        <div class="daily-price-highlight">
+                            That’s just <span class="highlight-gold">3 pence</span> a day.
+                        </div>
+                        <p class="ridicule-text">That's literally less than 3 pence a day. You can't even buy a single grape for that.</p>
+
+                        <a href="https://wa.me/YOUR_NUMBER" class="btn-cta pulse-bt" id="cta-btn">
+                            UNLOCK FULL YEAR ACCESS FOR £9.99 👉
+                        </a>
+                        <p class="cta-guarantee">No monthly fees. One-time payment. 365 days of peace.</p>
+                    </div>
+
+                    <!-- Profit Message -->
+                    <div class="profit-banner">
+                        <p><i data-lucide="lightbulb" class="profit-icon"></i> Think about it: If Penny saves you from just ONE impulse Uber or ONE forgotten subscription, it has already paid for itself for the entire year.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js" defer></script>
+</body>
+</html>

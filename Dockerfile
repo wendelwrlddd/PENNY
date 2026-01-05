@@ -1,20 +1,14 @@
-
 FROM node:18-slim
 
-# Create app directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install production dependencies
 COPY package*.json ./
+RUN npm install --omit=dev
 
-# Install dependencies
-RUN npm install
-
-# Copy app source
+# Copy all files (including pre-built client/dist if not ignored)
 COPY . .
 
-# Expose port
 EXPOSE 8080
 
-# Map standard Node start command
 CMD [ "node", "server.js" ]

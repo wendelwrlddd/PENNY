@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
-import { ShieldCheck, Globe, CheckCircle2, Users, Sparkles, PartyPopper, MessageCircle } from 'lucide-react';
+import { ShieldCheck, Globe, CheckCircle2, Users, Sparkles, PartyPopper, MessageCircle, Phone, AlertTriangle, Loader2 } from 'lucide-react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import './index.css';
+import PaymentModal from './components/PaymentModal';
+import Quiz from './components/Quiz';
 
 gsap.registerPlugin(ScrollTrigger);
-import './index.css';
 
 // Firebase Client Configuration
 const firebaseConfig = {
@@ -149,6 +151,10 @@ function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
 
+  const [isPayModalOpen, setIsPayModalOpen] = useState(false);
+  const [showQuiz, setShowQuiz] = useState(false);
+
+
   // PASSO 4: Implementação no Frontend (App.jsx)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -157,7 +163,7 @@ function App() {
     // URL do Backend (Fly.io em produção, localhost em dev)
     const baseUrl = window.location.hostname === 'localhost' 
       ? 'http://localhost:8080' 
-      : 'https://penny-finance-backend.fly.dev';
+      : '';
 
     // CASO 1: Usuário chegou via Link Mágico (tem token na URL)
     if (tokenFromUrl) {
@@ -431,6 +437,10 @@ function App() {
       });
     }, { scope: container });
 
+    const openPaymentModal = () => {
+      setIsPayModalOpen(true);
+    };
+
     return (
     <div ref={container} className="min-h-screen bg-black text-white selection:bg-primary selection:text-black overflow-x-hidden">
       {/* Navbar */}
@@ -482,15 +492,15 @@ function App() {
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <a href="#pricing" className="w-full sm:w-auto px-8 py-4 bg-primary text-black font-bold rounded-full hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all text-center">
-                {t.getStarted}
-              </a>
-              <button className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
-                <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 fill-white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                </div>
-                {t.introduction}
+              <button 
+                onClick={() => setShowQuiz(true)}
+                className="w-full sm:w-auto px-8 py-4 bg-primary text-black font-bold rounded-full hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all text-center"
+              >
+                {isBrazil ? "Fazer Teste de Personalidade" : "Start Personality Test"}
               </button>
+              <a href="#pricing" className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-colors text-center">
+                {isBrazil ? "Ver Preços" : "See Pricing"}
+              </a>
             </div>
             <div className="mt-12 flex items-center justify-center gap-8">
               <div><p className="text-2xl font-bold">25k+</p><p className="text-xs text-gray-500 uppercase tracking-widest">{t.happyCustomers}</p></div>
@@ -555,7 +565,7 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={() => window.open('https://wa.me/557391082831?text=%23PREMIUM', '_blank')}
+                onClick={openPaymentModal}
                 className="mt-12 w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-bold transition-all"
               >
                 {t.selectPlan}
@@ -585,7 +595,7 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={() => window.open('https://wa.me/557391082831?text=%23PREMIUM', '_blank')}
+                onClick={openPaymentModal}
                 className="mt-12 w-full py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
               >
                 {t.selectPlan}
@@ -935,10 +945,29 @@ function App() {
   }
 
   if (!userId) {
-    return <LandingPage />;
+    if (showQuiz) {
+      return (
+        <>
+          <Quiz onCompletePurchase={() => setIsPayModalOpen(true)} />
+          <PaymentModal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)} />
+        </>
+      );
+    }
+
+    return (
+      <>
+        <LandingPage />
+        <PaymentModal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)} />
+      </>
+    );
   }
 
-  return <Dashboard />;
+  return (
+    <>
+      <Dashboard />
+      <PaymentModal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)} />
+    </>
+  );
 }
 
 export default App;

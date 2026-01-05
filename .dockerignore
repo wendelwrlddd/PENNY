@@ -9,7 +9,7 @@
 **\lerna-debug.log*
 
 **\node_modules
-**\dist
+# **\dist (Not ignored to allow copying local build)
 **\dist-ssr
 **\*.local
 
