@@ -599,10 +599,10 @@ function AppContent() {
                 </ul>
               </div>
               <button 
-                onClick={() => window.location.href = '/checkout'}
+                onClick={() => window.location.href = 'https://penny-finance.vercel.app/checkout'}
                 className="mt-12 w-full py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
               >
-                {t.selectPlan}
+                CLAIM OFFER NOW
               </button>
             </div>
           </div>
