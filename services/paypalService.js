@@ -39,10 +39,10 @@ export async function generateSubscriptionLink(userPhone) {
                 custom_id: userPhone, // IMPORTANTE: Enviamos o telefone aqui
                 application_context: {
                     brand_name: "Penny Finance",
-                    locale: "pt-BR", 
+                    locale: "en-GB", 
                     user_action: "SUBSCRIBE_NOW",
-                    return_url: "https://penny-finance.vercel.app/payment-success", 
-                    cancel_url: "https://penny-finance.vercel.app/payment-cancel"
+                    return_url: "https://penny-finance.vercel.app/thank-you", 
+                    cancel_url: "https://penny-finance.vercel.app/checkout"
                 }
             },
             {

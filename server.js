@@ -1,7 +1,8 @@
+import 'dotenv/config';
 
 import express from 'express';
+import paypal from '@paypal/checkout-server-sdk';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import cron from 'node-cron';
 import admin from 'firebase-admin';
 import cookieParser from 'cookie-parser';
@@ -17,10 +18,13 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import { Server } from 'socket.io';
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
+// dotenv.config(); // Removed - loaded at top
 
 const app = express();
 const server = http.createServer(app);
@@ -64,7 +68,7 @@ const ALLOWED_NUMBERS = [
 ];
 
 app.use(cors({
-  origin: ['https://penny-finance.vercel.app', 'https://penny-finance-backend.fly.dev', 'http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5500'],
+  origin: true,
   credentials: true
 }));
 app.use(cookieParser());
@@ -282,6 +286,190 @@ app.get('/api/analytics/hourly', async (req, res) => {
   }
 });
 
+// --- PAYPAL CONFIGURATION ---
+
+const clientId = process.env.PAYPAL_CLIENT_ID;
+const clientSecret = process.env.PAYPAL_SECRET;
+
+let environment;
+if (process.env.PAYPAL_MODE === 'live') {
+    environment = new paypal.core.LiveEnvironment(clientId, clientSecret);
+    console.log("💳 PayPal: Ambiente LIVE (Produção) ativado!");
+} else {
+    environment = new paypal.core.SandboxEnvironment(clientId, clientSecret);
+    console.log("🧪 PayPal: Ambiente SANDBOX (Teste) ativado.");
+}
+let client = new paypal.core.PayPalHttpClient(environment);
+
+// --- PAYPAL ROUTES ---
+
+app.post('/api/create-order', async (req, res) => {
+    const { whatsappNumber } = req.body; 
+
+    // Validação básica
+    if (!whatsappNumber) {
+        return res.status(400).json({ error: "WhatsApp é obrigatório" });
+    }
+
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.prefer("return=representation");
+    request.requestBody({
+        intent: 'CAPTURE',
+        purchase_units: [{
+            amount: { currency_code: 'GBP', value: '9.99' },
+            description: "Penny Premium Subscription",
+            // O SEGRED0 ESTÁ AQUI: Enviamos o Zap dentro do pedido
+            custom_id: whatsappNumber 
+        }]
+    });
+
+    try {
+        const order = await client.execute(request);
+        res.json({ id: order.result.id });
+    } catch (e) {
+        console.error("Erro ao criar pedido:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- ROTA DE CAPTURA (O seu "Webhook" que libera o Firebase) ---
+app.post('/api/capture-order', async (req, res) => {
+    const { orderID } = req.body;
+    console.log(`[DEBUG] Tentando capturar pedido: ${orderID}`);
+
+    if (!db) {
+        console.error("❌ ERRO CRÍTICO: DB não inicializado (db is null)");
+        return res.status(500).json({ error: "Database not initialized" });
+    }
+
+    const request = new paypal.orders.OrdersCaptureRequest(orderID);
+    request.requestBody({});
+
+    try {
+        const capture = await client.execute(request);
+        
+        // LOGAR O RESULTADO DO PAYPAL PARA VER SE O WHATSAPP VEIO
+        console.log('[DEBUG] Resposta do PayPal:', JSON.stringify(capture.result, null, 2));
+
+        if (capture.result.status === 'COMPLETED') {
+            
+            // Tenta pegar o WhatsApp em dois lugares (para garantir)
+            // 1. No purchase_units (onde mandamos)
+            // 2. No payer info (caso o usuário tenha preenchido no PayPal)
+            const captureUnit = capture.result.purchase_units[0].payments.captures[0];
+            const whatsappDoUsuario = captureUnit.custom_id || capture.result.payer.email_address; // Fallback para email se der ruim
+
+            console.log(`[DEBUG] WhatsApp recuperado: ${whatsappDoUsuario}`);
+
+            if (!whatsappDoUsuario) {
+                throw new Error("O campo custom_id (WhatsApp) veio vazio do PayPal!");
+            }
+
+            try {
+                // TENTATIVA DE SALVAR NO FIREBASE
+                console.log('[DEBUG] Tentando salvar no Firestore...');
+                
+                await db.collection('usuarios').doc(whatsappDoUsuario).set({
+                    status: 'active',
+                    plan: 'premium',
+                    createdAt: new Date().toISOString(),
+                    lastPaymentID: capture.result.id,
+                    phone: whatsappDoUsuario,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+
+                console.log('[DEBUG] Sucesso ao salvar no Firestore!');
+                
+                return res.json({ status: 'COMPLETED', user: whatsappDoUsuario });
+
+            } catch (firebaseError) {
+                // AQUI ESTÁ O SEU ERRO ATUAL
+                console.error('❌ ERRO CRÍTICO NO FIREBASE:', firebaseError);
+                // Mesmo que o Firebase falhe, o pagamento foi feito. 
+                // Retornamos sucesso para o front não dar erro, mas logamos o problema.
+                return res.json({ status: 'COMPLETED', user: whatsappDoUsuario, warning: 'Payment done but db failed', error: firebaseError.message });
+            }
+        }
+        
+        res.json({ status: capture.result.status });
+        
+    } catch (e) {
+        console.error("❌ ERRO GERAL NA ROTA:", e);
+        // O erro 500 original vinha daqui
+        res.status(500).json({ error: e.message, stack: e.stack });
+    }
+});
+
+
+
+
+// --- STRIPE ROUTES ---
+// --- STRIPE ROUTES ---
+let stripe;
+if (process.env.STRIPE_SECRET_KEY) {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+} else {
+    console.warn("⚠️ Stripe skipped: STRIPE_SECRET_KEY not found.");
+}
+
+app.post('/api/create-payment-intent', async (req, res) => {
+  const { whatsappNumber } = req.body;
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+
+  // Permite criar intent sem whats inicialmente se quiser, mas mantemos lógica
+  // Se o frontend mandar, usamos.
+  
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: 999, // 9.99 GBP (em centavos)
+      currency: "gbp",
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        whatsapp: whatsappNumber || "Pending",
+        product: "Penny Premium"
+      },
+    });
+
+    res.send({ clientSecret: paymentIntent.client_secret });
+  } catch (e) {
+    console.error("Stripe Intent Error:", e);
+    res.status(500).send({ error: e.message });
+  }
+});
+
+app.post('/api/verify-payment', async (req, res) => {
+    const { paymentIntentId } = req.body;
+    
+    try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        if (paymentIntent.status === 'succeeded') {
+            const whatsapp = paymentIntent.metadata.whatsapp;
+            
+            console.log(`[STRIPE] Pagamento confirmado para: ${whatsapp}`);
+
+            if (whatsapp && whatsapp !== "Pending" && db) {
+                await db.collection('usuarios').doc(whatsapp).set({
+                    status: 'active',
+                    plan: 'premium',
+                    createdAt: new Date().toISOString(),
+                    lastPaymentID: paymentIntent.id,
+                    provider: 'stripe',
+                    phone: whatsapp,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+                console.log('[STRIPE] Banco de dados atualizado.');
+            }
+            
+            res.send({ success: true, user: whatsapp });
+        } else {
+            res.status(400).send({ error: "Payment not successful" });
+        }
+    } catch (e) {
+        console.error("Stripe Verify Error:", e);
+        res.status(500).send({ error: e.message });
+    }
+});
 
 /**
  * 🔗 Gerar Link do PayPal via Web Funnel

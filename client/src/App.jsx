@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
 import { ShieldCheck, Globe, CheckCircle2, Users, Sparkles, PartyPopper, MessageCircle, Phone, AlertTriangle, Loader2 } from 'lucide-react';
@@ -142,7 +143,18 @@ const translations = {
   }
 };
 
+import Checkout from './components/Checkout';
+import ThankYou from './components/ThankYou';
+
 function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
+}
+
+function AppContent() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isBrazil, setIsBrazil] = useState(false);
@@ -221,20 +233,11 @@ function App() {
 
   const userId = authUser?.phoneNumber;
 
-  // Detect Country by IP
+  // Localization: Default to UK (GBP) to avoid problematic IP detection calls
   useEffect(() => {
-    fetch('https://ipapi.co/json/')
-      .then(res => res.json())
-      .then(data => {
-        if (data.country_code === 'BR') {
-          console.log("🇧🇷 [Região] Brasil detectado via IP. Mudando para R$.");
-          setIsBrazil(true);
-        } else {
-          console.log(`🌍 [Região] País detectado: ${data.country_name}. Mantendo GBP.`);
-        }
-      })
-      .catch(err => console.error("Localization error:", err))
-      .finally(() => setLocaleLoaded(true));
+    console.log("🌍 [Region] Defaulting to UK mode (GBP £).");
+    setIsBrazil(false);
+    setLocaleLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -460,7 +463,7 @@ function App() {
             <a href="#preview" className="hover:text-white transition-colors">{isBrazil ? "Prévia" : "Preview"}</a>
             <a href="#how-it-works" className="hover:text-white transition-colors">{isBrazil ? "Como funciona" : "How it works"}</a>
           </div>
-          <a href="#pricing" className="px-5 py-2 bg-primary text-black text-sm font-bold rounded-full hover:scale-105 transition-transform">
+          <a href="/checkout" className="px-5 py-2 bg-primary text-black text-sm font-bold rounded-full hover:scale-105 transition-transform">
             {t.getStarted}
           </a>
         </div>
@@ -565,7 +568,7 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={openPaymentModal}
+                onClick={() => window.location.href = '/checkout'}
                 className="mt-12 w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-bold transition-all"
               >
                 {t.selectPlan}
@@ -595,7 +598,7 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={openPaymentModal}
+                onClick={() => window.location.href = '/checkout'}
                 className="mt-12 w-full py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
               >
                 {t.selectPlan}
@@ -911,26 +914,13 @@ function App() {
 
   // --- Main Render Logic ---
 
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="bg-muted p-8 rounded-3xl border border-red-500/30 max-w-md w-full text-center">
-          <h1 className="text-2xl font-bold text-red-500 mb-4">⚠️ Configuration Error</h1>
-          <p className="text-gray-400 mb-6">Environment variables are missing on Vercel.</p>
-          <div className="p-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 text-xs text-orange-200 text-left">
-            <h3 className="font-bold mb-2">💡 Tip:</h3>
-            <ul className="space-y-1 list-disc pl-4 opacity-80">
-              <li>Check VITE_FIREBASE_API_KEY</li>
-              <li>Make sure Production is checked</li>
-              <li>Perform a Redeploy</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Safety Priority Check: Force professional routes immediately
+  const lowerPath = window.location.pathname.toLowerCase();
+  if (lowerPath.includes('/checkout')) return <Checkout />;
+  if (lowerPath.includes('/thank-you')) return <ThankYou />;
+  if (lowerPath.includes('/payment-success')) return <SuccessPage />;
 
-  if (authChecking || (isAuthenticated && !userId)) {
+  if (authChecking) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
@@ -938,33 +928,23 @@ function App() {
     );
   }
 
-  const isSuccessPage = window.location.pathname === '/payment-success';
-
-  if (isSuccessPage) {
-    return <SuccessPage />;
-  }
-
-  if (!userId) {
-    if (showQuiz) {
-      return (
-        <>
-          <Quiz onCompletePurchase={() => setIsPayModalOpen(true)} />
-          <PaymentModal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)} />
-        </>
-      );
-    }
-
-    return (
-      <>
-        <LandingPage />
-        <PaymentModal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)} />
-      </>
-    );
-  }
-
   return (
     <>
-      <Dashboard />
+      <Routes>
+        <Route path="/" element={
+          !userId ? (
+            showQuiz ? (
+              <Quiz onCompletePurchase={() => setIsPayModalOpen(true)} />
+            ) : (
+              <LandingPage />
+            )
+          ) : (
+            <Dashboard />
+          )
+        } />
+        {/* Fallback to Home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
       <PaymentModal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)} />
     </>
   );

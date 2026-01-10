@@ -523,54 +523,67 @@ const Quiz = ({ onCompletePurchase }) => {
             </p>
 
             <div className="power-offer-card">
-              <div className="bg-white/5 p-4 text-center border-b border-white/5">
-                <p className="text-[10px] font-black text-emerald-400 uppercase tracking-wider mb-3">Exclusive Manchester Offer Unlocked</p>
-                <div className="bg-black/40 rounded-full px-4 py-2 flex items-center gap-2 w-fit mx-auto">
-                  <span className="text-[10px] text-gray-500">Valid for:</span>
-                  <span className="timer-clock text-xs font-bold">{formatTime(timeLeft)}</span>
+              {/* Top: Urgency Header */}
+              <div className="offer-header">
+                <p className="offer-unlocked">Exclusive Offer for Manchester Users Unlocked</p>
+                <div className="timer-badge">
+                  <span className="timer-label">Valid for:</span>
+                  <span className="timer-clock">{formatTime(timeLeft)}</span>
                 </div>
               </div>
 
-              <div className="p-6">
-                <h4 className="text-xs font-black mb-4">What you get for the price of a pint:</h4>
-                <ul className="space-y-2">
-                  {['Unlimited Messages & Tracking', 'Real-time WhatsApp Dashboard', 'Smart Auto-Categorization (AI)', 'Priority Support 24/7'].map((item, i) => (
-                    <li key={i} className="flex items-center gap-2 text-[10px] font-medium">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
+              {/* Middle: Value Stack */}
+              <div className="value-stack">
+                <h4 className="value-stack-title">What you get for the price of a pint:</h4>
+                <ul className="value-list">
+                  <li><CheckCircle2 className="val-check" /> Unlimited Messages & Tracking</li>
+                  <li><CheckCircle2 className="val-check" /> Real-time WhatsApp Dashboard</li>
+                  <li><CheckCircle2 className="val-check" /> Weekly Financial Health Reports</li>
+                  <li><CheckCircle2 className="val-check" /> Smart Auto-Categorization (AI)</li>
+                  <li><CheckCircle2 className="val-check" /> Priority Support 24/7</li>
+                  <li><CheckCircle2 className="val-check" /> Bank-Grade Security</li>
                 </ul>
               </div>
 
-              <div className="p-6 bg-black/20 text-center">
+              {/* Bottom: Price & CTA */}
+              {/* Bottom: Price & CTA */}
+              <div className="p-6 bg-white/5 rounded-2xl mt-4 text-center border border-white/5">
                 <div className="mb-4">
-                  <span className="text-sm font-bold">De <span className="line-through text-red-500">£59.99/year</span> por £9.99/year</span>
+                  <p className="text-gray-400 text-sm mb-1">
+                    From <span className="line-through text-red-500 font-bold">£59.99/year</span> to <span className="text-white font-bold text-lg">£9.99/year</span>
+                  </p>
+                  <div className="text-gray-200 text-lg leading-tight">
+                    That's just <span className="bg-yellow-400/20 text-yellow-400 px-2 py-0.5 rounded text-xl font-black transform inline-block -rotate-1">3 pence</span> a day
+                  </div>
                 </div>
-                <div className="text-2xl font-black mb-1">That's just <span className="text-yellow-400 shadow-yellow-400">3 pence</span> a day.</div>
-                <p className="text-[9px] italic text-gray-500 mb-6">Literally less than a single grape.</p>
-                
+
                 <button 
+                  className="w-full py-4 bg-[#00D09C] text-black font-black text-lg rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,208,156,0.3)] flex items-center justify-center gap-2"
                   onClick={onCompletePurchase}
-                  className="pulse-bt w-full py-4 bg-emerald-500 text-black font-black rounded-full text-xs"
                 >
-                  UNLOCK FULL YEAR ACCESS FOR £9.99 👉
+                  CLAIM OFFER NOW <ArrowRight className="w-6 h-6" />
                 </button>
-                <p className="mt-3 text-[8px] text-gray-600 uppercase tracking-widest">No monthly fees. One-time payment.</p>
+                
+                <p className="mt-3 text-[11px] text-emerald-400/80 font-medium uppercase tracking-wide">
+                  Save over £300 in your first few weeks
+                </p>
+
+                {/* Security Footer */}
+                <div className="mt-6 pt-4 border-t border-white/10 flex flex-col items-center justify-center opacity-50">
+                   <div className="flex items-center gap-2 mb-1">
+                      <img src="/penny-logo.png" alt="Penny" className="w-4 h-4 grayscale opacity-80" />
+                      <span className="font-bold text-gray-500 tracking-widest text-[9px]">PENNY FINANCE</span>
+                   </div>
+                   <p className="text-[9px] text-gray-600">Secure 256-bit SSL Encryption</p>
+                </div>
               </div>
 
-              <div className="bg-emerald-500/10 p-4 flex gap-3 border-t border-emerald-500/20">
-                <Lightbulb className="w-4 h-4 text-emerald-500 shrink-0" />
-                <p className="text-[9px] leading-relaxed text-gray-300">
+              {/* Profit Message */}
+              <div className="profit-banner">
+                <p>
+                  <Lightbulb className="profit-icon inline-block mb-1" /> 
                   Think about it: If Penny saves you from just ONE impulse Uber or ONE forgotten subscription, it has already paid for itself.
                 </p>
-                <div className="mt-8 pt-6 border-t border-white/10 flex flex-col items-center justify-center opacity-60">
-                   <div className="flex items-center gap-2 mb-2">
-                      <img src="/penny-logo.png" alt="Penny" className="w-6 h-6 grayscale opacity-80" />
-                      <span className="font-bold text-gray-500 tracking-widest text-xs">PENNY FINANCE</span>
-                   </div>
-                   <p className="text-[10px] text-gray-600">Secure 256-bit SSL Encryption</p>
-                </div>
               </div>
             </div>
           </div>
