@@ -74,7 +74,7 @@ const PaymentForm = ({ whatsapp, loadingParent, setLoadingParent }) => {
         ) : (
             <>
                 <Lock size={18} />
-                <span>Pagar R$ 19,90 com Segurança</span>
+                <span>Pay £9.99 Securely</span>
             </>
         )}
       </button>
@@ -152,7 +152,7 @@ const Checkout = () => {
                             </div>
                             <input 
                                 type="tel" 
-                                placeholder="(11) 91234-5678" 
+                                placeholder="07123 456789"
                                 value={whatsapp}
                                 onChange={(e) => setWhatsapp(e.target.value)}
                                 className="block w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white transition-all text-lg"
