@@ -944,6 +944,7 @@ function AppContent() {
             <Dashboard />
           )
         } />
+        <Route path="/quiz" element={<Quiz onCompletePurchase={() => window.location.href = '/checkout'} />} />
         {/* Fallback to Home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
