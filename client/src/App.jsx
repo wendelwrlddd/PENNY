@@ -936,7 +936,7 @@ function AppContent() {
         <Route path="/" element={
           !userId ? (
             showQuiz ? (
-              <Quiz onCompletePurchase={() => setIsPayModalOpen(true)} />
+              <Quiz onCompletePurchase={() => window.location.href = '/checkout'} />
             ) : (
               <LandingPage />
             )
