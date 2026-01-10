@@ -155,6 +155,7 @@ function App() {
 }
 
 function AppContent() {
+  console.log("🚀 [System] Penny Version 2.0.0 - GBP Mode Active");
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isBrazil, setIsBrazil] = useState(false);
