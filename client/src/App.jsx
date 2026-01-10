@@ -598,12 +598,12 @@ function AppContent() {
                   <li className="flex items-center gap-3 text-white"><CheckCircle2 className="w-5 h-5 text-primary" /> {isBrazil ? "Suporte VIP 24/7" : "VIP 24/7 Support"}</li>
                 </ul>
               </div>
-              <button 
-                onClick={() => window.location.href = 'https://penny-finance.vercel.app/checkout'}
-                className="mt-12 w-full py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
+              <a 
+                href="https://penny-finance.vercel.app/checkout"
+                className="mt-12 w-full block text-center py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all cursor-pointer relative z-20"
               >
                 CLAIM OFFER NOW
-              </button>
+              </a>
             </div>
           </div>
         </div>
