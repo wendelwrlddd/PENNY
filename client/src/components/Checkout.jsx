@@ -164,29 +164,61 @@ const Checkout = () => {
                         </p>
                     </div>
 
-                    {/* Payment Info: PayPal Only */}
-                    <div className="mb-8">
-                        <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center gap-4">
-                            <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center p-2">
-                                <img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" alt="PayPal" className="w-full h-full object-contain" />
+                    {/* Payment Method Selection */}
+                    <div className="flex gap-4 mb-8">
+                        <button 
+                            onClick={() => setPaymentMethod('card')}
+                            className={`flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${paymentMethod === 'card' ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}
+                        >
+                            <CreditCard className={paymentMethod === 'card' ? 'text-indigo-600' : 'text-slate-400'} />
+                            <span className={`text-xs font-bold ${paymentMethod === 'card' ? 'text-indigo-900' : 'text-slate-500'}`}>Credit Card</span>
+                        </button>
+                        <button 
+                            onClick={() => setPaymentMethod('paypal')}
+                            className={`flex-1 p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${paymentMethod === 'paypal' ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}
+                        >
+                            <img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" alt="PayPal" className="h-6 object-contain" />
+                            <span className={`text-xs font-bold ${paymentMethod === 'paypal' ? 'text-indigo-900' : 'text-slate-500'}`}>PayPal</span>
+                        </button>
+                    </div>
+
+                    <div className="mb-6">
+                        <div className="bg-indigo-50/50 border border-indigo-100/50 p-4 rounded-2xl flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-600">
+                                {paymentMethod === 'card' ? <Lock size={20} /> : <img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" alt="PayPal" className="h-4" />}
                             </div>
                             <div>
-                                <h4 className="font-bold text-slate-800 text-sm">Payment via PayPal</h4>
-                                <p className="text-slate-500 text-xs">Secure instant subscription in GBP.</p>
+                                <h4 className="font-bold text-slate-800 text-sm">Secure {paymentMethod === 'card' ? 'Card' : 'PayPal'} Payment</h4>
+                                <p className="text-slate-500 text-xs text-balance">Instant activation of Penny Premium for £9.99.</p>
                             </div>
                         </div>
                     </div>
 
                     {/* DYNAMIC CONTENT AREA */}
-                    <div className="min-h-[200px]">
-                        <PayPalScriptProvider options={{ "client-id": import.meta.env.VITE_PAYPAL_CLIENT_ID, currency: "GBP" }}>
-                            <div className="animate-fadeIn space-y-6">
-                                {whatsapp.length > 8 ? (
-                                    <div className="space-y-4">
+                    <div className="min-h-[220px]">
+                        {whatsapp.length > 8 ? (
+                            paymentMethod === 'card' ? (
+                                stripePromise && clientSecret ? (
+                                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                                        <PaymentForm 
+                                            whatsapp={whatsapp} 
+                                            loadingParent={loading} 
+                                            setLoadingParent={setLoading} 
+                                        />
+                                    </Elements>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center p-12 bg-slate-50 rounded-2xl border border-slate-100 gap-4">
+                                        <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                                        <p className="text-xs text-slate-500 font-medium tracking-tight">Securing your payment session...</p>
+                                    </div>
+                                )
+                            ) : (
+                                <PayPalScriptProvider options={{ "client-id": import.meta.env.VITE_PAYPAL_CLIENT_ID, currency: "GBP" }}>
+                                    <div className="animate-fadeIn space-y-6">
                                         <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex gap-3 items-start">
                                             <Shield className="text-amber-600 shrink-0 mt-0.5" size={18} />
-                                            <div className="text-xs text-amber-800 leading-relaxed font-medium">
-                                                You are about to activate your subscription via PayPal. Please ensure your PayPal email is accessible.
+                                            <div className="text-xs text-amber-800 leading-relaxed font-medium text-balance">
+                                                You are about to activate your annual subscription via PayPal. Please ensure your PayPal email is accessible.
                                             </div>
                                         </div>
                                         <PayPalButtons 
@@ -217,17 +249,17 @@ const Checkout = () => {
                                             }}
                                         />
                                     </div>
-                                ) : (
-                                    <div className="p-8 bg-slate-50 border border-slate-100 rounded-2xl text-slate-400 text-center space-y-2">
-                                        <div className="inline-block p-3 bg-white rounded-full shadow-sm text-slate-300">
-                                            <Phone size={24} />
-                                        </div>
-                                        <p className="text-sm font-bold text-slate-500">Enter your WhatsApp number above</p>
-                                        <p className="text-xs">Once provided, the PayPal buttons will be securely unlocked.</p>
-                                    </div>
-                                )}
+                                </PayPalScriptProvider>
+                            )
+                        ) : (
+                            <div className="p-10 bg-slate-50 border border-slate-100 rounded-2xl text-slate-400 text-center space-y-3">
+                                <div className="inline-block p-3.5 bg-white rounded-2xl shadow-sm text-slate-300">
+                                    <Phone size={24} />
+                                </div>
+                                <p className="text-sm font-bold text-slate-500">Enter your WhatsApp number above</p>
+                                <p className="text-xs text-balance px-4 leading-relaxed">Please provide your WhatsApp number formatted with local dial code to securely unlock payment methods.</p>
                             </div>
-                        </PayPalScriptProvider>
+                        )}
                     </div>
                     
                     {/* GDPR Compliant Badge */}
