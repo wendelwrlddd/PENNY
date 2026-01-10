@@ -9,6 +9,14 @@ import { useGSAP } from '@gsap/react';
 const stripePublicKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
 const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
 
+// Determine API Base URL
+const getApiUrl = (endpoint) => {
+    if (window.location.hostname === 'localhost') {
+        return endpoint; // Use proxy in dev
+    }
+    return `https://penny-finance-backend.fly.dev${endpoint}`;
+};
+
 const PaymentForm = ({ whatsapp, loadingParent, setLoadingParent }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -36,7 +44,7 @@ const PaymentForm = ({ whatsapp, loadingParent, setLoadingParent }) => {
       setLoadingParent(false);
     } else if (paymentIntent && paymentIntent.status === "succeeded") {
        try {
-           await fetch("/api/verify-payment", {
+           await fetch(getApiUrl("/api/verify-payment"), {
                method: "POST", headers: { "Content-Type": "application/json" },
                body: JSON.stringify({ 
                    paymentIntentId: paymentIntent.id,
@@ -101,7 +109,7 @@ const Checkout = () => {
         if (paymentMethod === 'card' && stripePublicKey) {
             const createIntent = async () => {
                 try {
-                    const res = await fetch("/api/create-payment-intent", {
+                    const res = await fetch(getApiUrl("/api/create-payment-intent"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ whatsappNumber: whatsapp || "Pending" }), 
@@ -227,7 +235,7 @@ const Checkout = () => {
                                         <PayPalButtons 
                                             style={{ layout: "vertical", shape: "rect", borderRadius: 12, height: 54, color: 'blue' }}
                                             createOrder={(data, actions) => {
-                                                return fetch("/api/create-order", {
+                                                return fetch(getApiUrl("/api/create-order"), {
                                                     method: "POST",
                                                     headers: { "Content-Type": "application/json" },
                                                     body: JSON.stringify({ whatsappNumber: whatsapp }) 
@@ -236,7 +244,7 @@ const Checkout = () => {
                                                 .then((order) => order.id);
                                             }}
                                             onApprove={(data, actions) => {
-                                                return fetch("/api/capture-order", {
+                                                return fetch(getApiUrl("/api/capture-order"), {
                                                     method: "POST",
                                                     headers: { "Content-Type": "application/json" },
                                                     body: JSON.stringify({ orderID: data.orderID })
