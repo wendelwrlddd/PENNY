@@ -598,18 +598,13 @@ function AppContent() {
                   <li className="flex items-center gap-3 text-white"><CheckCircle2 className="w-5 h-5 text-primary" /> {isBrazil ? "Suporte VIP 24/7" : "VIP 24/7 Support"}</li>
                 </ul>
               </div>
-              <div className="mt-12 relative z-50">
-                  <a 
-                    href="https://penny-finance.vercel.app/checkout"
-                    onClick={(e) => {
-                        e.stopPropagation(); // Stop any parent events
-                        console.log("Button Clicked!"); // Debug
-                    }}
-                    className="w-full block text-center py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all cursor-pointer select-none active:scale-95"
-                  >
-                    CLAIM OFFER NOW
-                  </a>
-              </div>
+              <a 
+                href="https://penny-finance.vercel.app/checkout"
+                className="mt-12 w-full block text-center py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
+                style={{ position: 'relative', zIndex: 9999, cursor: 'pointer' }}
+              >
+                CLAIM OFFER NOW
+              </a>
             </div>
           </div>
         </div>
