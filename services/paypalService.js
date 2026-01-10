@@ -6,7 +6,7 @@ dotenv.config();
 const CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const SECRET = process.env.PAYPAL_SECRET;
 const BASE_URL = 'https://api-m.paypal.com'; // MUDADO PARA LIVE
-const PLAN_ID_BR = 'P-45G70889433490700NFNJPVQ'; 
+const PLAN_ID_BR = 'P-0C563139YK148254LNFRM5YQ'; // NOVO PLANO GBP £9.99
 
 async function getAccessToken() {
     if (!CLIENT_ID || !SECRET) return null;
