@@ -1,229 +1,243 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ChevronRight, 
+  ChevronLeft,
   RefreshCw, 
   CheckCircle2, 
   Lightbulb, 
   Banknote, 
   MessageSquare, 
   Clock,
-  ArrowRight
+  ArrowRight,
+  TrendingUp
 } from 'lucide-react';
 import gsap from 'gsap';
 import './Quiz.css';
 
+// Analytics Tracker Helper
+const trackStep = async (stepName) => {
+  try {
+    const baseUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:8080' 
+      : 'https://penny-finance-backend.fly.dev';
+    
+    console.log(`[Analytics] Tracking step: ${stepName} to ${baseUrl}`);
+
+    const res = await fetch(`${baseUrl}/api/analytics/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: stepName })
+    });
+    
+    if (!res.ok) {
+        console.error('[Analytics] Server responded with error:', res.status, res.statusText);
+    } else {
+        console.log('[Analytics] Tracked successfully');
+    }
+  } catch (e) {
+    console.error('[Analytics] Tracking failed:', e);
+  }
+};
+
+const PERSONALITY_MAP = {
+  "In NQ/Spinningfields (Pints and fancy dinners).": {
+    pain: "The Sunday Fear knowing you dropped £100 on a single night out.",
+    desire: "Still being the legend of the group, but spending half the cash and dodging the overdraft."
+  },
+  "Convenience runs (Uber Eats, Pret, £4 coffees).": {
+    pain: "The 'Latte Levy' - bleeding cash £4 at a time without realizing.",
+    desire: "Enjoying your treats without that guilty feeling at the end of the month."
+  },
+  "Transport chaos (Panic Ubers and Tram fines).": {
+    pain: "The frustration of burning cash on silly fines and surge pricing Ubers.",
+    desire: "Getting around Manchester stress-free and keeping that cash in your pocket."
+  },
+  "Late night scrolling (ASOS/Amazon at 11pm).": {
+    pain: "That dopamine hit at checkout followed by instant buyer's remorse.",
+    desire: "Treating yourself to things you actually love, without the financial hangover."
+  }
+};
+
+const REVIEWS = [
+  {
+    name: "Sarah Jenkins",
+    location: "Ancoats, MCR",
+    text: "I thought saving was impossible with my NQ nights out. Penny showed me it was the Ubers, not the pints. Recovered £150 in the first month!",
+    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
+    stars: 5
+  },
+  {
+    name: "Mike Thompson",
+    location: "Didsbury",
+    text: "Never realized how much I was spending on random meal deals. This AI is brutal but brilliant. Saved £80 already.",
+    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+    stars: 5
+  },
+  {
+    name: "Jessica Lee",
+    location: "Salford Quays",
+    text: "Penny paid for itself in week one just by spotting a duplicate subscription I'd totally forgotten about. Class.",
+    avatar: "https://randomuser.me/api/portraits/women/68.jpg",
+    stars: 5
+  },
+  {
+    name: "David Chen",
+    location: "Fallowfield",
+    text: "Finally an app that doesn't bore me to death. It's like having a mate check your spending. Highly recommend.",
+    avatar: "https://randomuser.me/api/portraits/men/55.jpg",
+    stars: 5
+  },
+  {
+    name: "Emma Wilson",
+    location: "Chorlton",
+    text: "I was always afraid to check my bank balance. Penny makes it easy and actually funny. My savings are up £200.",
+    avatar: "https://randomuser.me/api/portraits/women/22.jpg",
+    stars: 5
+  }
+];
+
 const questions = [
   {
       id: 1,
-      icon: "Sunrise",
-      category: "C",
-      question: "Vamos começar com a sua manhã. O despertador toca, você está atrasado. O que acontece?",
+      icon: "HelpCircle",
+      category: "B",
+      question: "Let's be honest: Where do you feel you lost control this week?",
       options: [
-          { text: "Chamo um Uber. Não vou encarar a chuva até o ponto de ônibus.", cat: "C" },
-          { text: "Paro no Pret ou Starbucks. Preciso de um café de £4 para funcionar.", cat: "B" },
-          { text: "Corro para o trabalho em pânico, nem tomo café.", cat: "D" },
-          { text: "Estou de ressaca de ontem à noite, só quero sobreviver.", cat: "A" }
+          { text: "In NQ/Spinningfields (Pints and fancy dinners).", cat: "A" },
+          { text: "Convenience runs (Uber Eats, Pret, £4 coffees).", cat: "B" },
+          { text: "Transport chaos (Panic Ubers and Tram fines).", cat: "C" },
+          { text: "Late night scrolling (ASOS/Amazon at 11pm).", cat: "B" }
       ]
   },
   {
       id: 2,
-      icon: "UtensilsCrossed",
-      category: "D",
-      question: "Chegou a hora do almoço no escritório. Qual é o plano?",
+      icon: "MessageSquare",
+      category: "C",
+      question: "Why don't you track every penny?",
       options: [
-          { text: "Trouxe marmita, mas esqueci em casa e comprei um Tesco Meal Deal.", cat: "D" },
-          { text: "Pub lunch com a equipe! Um hambúrguer e talvez uma pint rápida.", cat: "A" },
-          { text: "Vou dar uma volta no Arndale... acabo comprando 'só uma coisinha'.", cat: "B" },
-          { text: "Peço um Deliveroo/Uber Eats direto na mesa.", cat: "C" }
+          { text: "Banking app needs FaceID and I can't be bothered.", cat: "C" },
+          { text: "Excel spreadsheets put me to sleep.", cat: "D" },
+          { text: "I keep the receipt but lose it 5 mins later.", cat: "C" },
+          { text: "Too scared to check the damage.", cat: "D" }
       ]
   },
   {
       id: 3,
-      icon: "Moon",
+      icon: "Banknote",
       category: "A",
-      question: "Sexta-feira à noite em Manchester. Onde é mais provável te encontrar?",
+      question: "What's the main excuse you tell yourself?",
       options: [
-          { text: "Northern Quarter ou Spinningfields. Rodadas de drinks até o fim.", cat: "A" },
-          { text: "Em casa, assistindo Netflix, mas pedindo um delivery caro.", cat: "D" },
-          { text: "Tentando voltar pra casa, mas o Metrolink tá quebrado (Uber de novo).", cat: "C" },
-          { text: "Navegando na ASOS ou Amazon com um vinho na mão.", cat: "B" }
+          { text: "If I pay cash, it doesn't count.", cat: "A" },
+          { text: "Uber buys me time, and time is money.", cat: "C" },
+          { text: "It’s an investment in my mental health.", cat: "B" },
+          { text: "I'll get this round, you get the next.", cat: "A" }
       ]
   },
   {
       id: 4,
-      icon: "TramFront",
-      category: "C",
-      question: "Seja honesto: Quantas vezes este mês você esqueceu de fazer o 'Touch-out' no Metrolink?",
+      icon: "Clock",
+      category: "D",
+      question: "If you had to log expenses manually, how long would you last?",
       options: [
-          { text: "Pelo menos umas duas vezes. Aqueles £4.60 doem.", cat: "C" },
-          { text: "Eu não pego Metrolink, só ando de Uber ou Táxi.", cat: "A" },
-          { text: "Eu nem olho, vai ver já me cobraram e eu não vi.", cat: "B" },
-          { text: "Eu ando a pé ou de bicicleta (quando não chove).", cat: "D" }
+          { text: "Wouldn't even start.", cat: "D" },
+          { text: "Maybe 2 days max.", cat: "C" },
+          { text: "A week, if I'm feeling ambitious.", cat: "B" },
+          { text: "I could, but it’s a massive faff.", cat: "A" }
       ]
   },
   {
       id: 5,
-      icon: "Calculator",
-      category: "B",
-      question: "'Girl Math' (ou Lógica de Bar): Qual frase você mais usa para justificar um gasto?",
-      options: [
-          { text: "'Se eu pagar em dinheiro vivo, é como se fosse de graça.'", cat: "B" },
-          { text: "'Eu pago essa rodada, você paga a próxima' (a conta nunca fecha).", cat: "A" },
-          { text: "'Se eu pegar um Uber agora, ganho 20 min de sono. Tempo é dinheiro!'", cat: "C" },
-          { text: "'Eu mereço, trabalhei muito essa semana.'", cat: "D" }
-      ]
-  },
-  {
-      id: "EDU_1",
-      icon: "GraduationCap",
-      category: "EDU",
-      question: "Você sabia que um estudo de Harvard mostrou que pessoas que sabem exatamente quanto gastam por dia...",
-      isChart: true,
-      subtext: "...terminam o mês com, em média, £300 a mais no bolso?",
-      options: [
-          { text: "🤯 Caramba, £300 pagam meu aluguel de vida social!", cat: "D" },
-          { text: "📉 Eu definitivamente estou no grupo que perde dinheiro.", cat: "D" },
-          { text: "🤔 Faz sentido, mas anotar dá trabalho.", cat: "D" }
-      ]
-  },
-  {
-      id: "EDU_2",
-      icon: "HelpCircle",
-      category: "EDU",
-      question: "Falando nisso... Qual é o maior motivo para você não anotar tudo hoje?",
-      options: [
-          { text: "Planilhas de Excel são chatas e feias.", cat: "C" },
-          { text: "Tenho preguiça de abrir o app do banco toda hora.", cat: "C" },
-          { text: "Eu esqueço de pegar a notinha fiscal.", cat: "B" },
-          { text: "Eu tenho medo de ver o valor total (Avestruz).", cat: "D" }
-      ]
-  },
-  {
-      id: "HERO",
       icon: "Zap",
-      category: "D",
-      question: "E se você tivesse um contato no WhatsApp que você só diz: 'Gastei 15 no NQ' e ele faz tudo por você?",
+      category: "A",
+      question: "Imagine sending a WhatsApp message 'Spent 15 at the pub' and AI logs it all. Would you use it?",
       options: [
-          { text: "✅ Sim! Eu vivo no WhatsApp mesmo.", cat: "SIM" },
-          { text: "✅ Seria um sonho, odeio apps complicados.", cat: "SIM" },
-          { text: "✅ Talvez, se for fácil assim mesmo.", cat: "SIM" }
+          { text: "YES! The only thing that would work.", cat: "A" },
+          { text: "Absolutely, if it's that quick.", cat: "C" },
+          { text: "Maybe, I hate opening other apps.", cat: "D" },
+          { text: "Sounds too easy, but I'm listening.", cat: "B" }
       ]
   },
   {
       id: 6,
-      icon: "Landmark",
-      category: "D",
-      question: "Qual é a sua relação com o aplicativo do seu banco (Monzo, Lloyds, etc)?",
+      icon: "Activity",
+      category: "A",
+      question: "Where will you be in 6 months without fixing this?",
       options: [
-          { text: "Eu evito abrir. O que os olhos não veem, o coração não sente.", cat: "D" },
-          { text: "Eu abro, vejo um monte de gastos de transporte e choro.", cat: "C" },
-          { text: "Eu abro domingo de manhã e tenho um mini ataque cardíaco.", cat: "A" },
-          { text: "Eu tenho notificações ativadas, mas ignoro todas.", cat: "B" }
+          { text: "Deep in my overdraft and stressed.", cat: "A" },
+          { text: "Same as now: surviving, but skint.", cat: "B" },
+          { text: "Saying goodbye to my holidays.", cat: "C" },
+          { text: "Don't even make me think about it.", cat: "D" }
       ]
   },
   {
       id: 7,
-      icon: "Coffee",
+      icon: "TrendingUp",
       category: "B",
-      question: "Você vê um café e um doce chique na Pollen Bakery em Ancoats. Custa £12. Você compra?",
+      question: "Did you know? Kellanova staff saved at least £300 in two weeks using Penny.",
       options: [
-          { text: "Claro! É pela experiência (e pela foto no Instagram).", cat: "B" },
-          { text: "Só se for num encontro ou com amigos.", cat: "A" },
-          { text: "Compro, mas sinto culpa logo depois de comer.", cat: "D" },
-          { text: "Não, prefiro gastar isso para chegar em casa seco.", cat: "C" }
+          { text: "Wow, that would sort me out!", cat: "A" },
+          { text: "Incredible they managed that.", cat: "C" },
+          { text: "I need those savings yesterday.", cat: "D" },
+          { text: "Sounds too good, but I'll give it a go.", cat: "B" }
       ]
   },
   {
       id: 8,
+      id_lead: "LEAD_CAPTURE",
       icon: "ClipboardList",
       category: "D",
-      question: "O pior de controlar gastos é...",
+      question: "We've analyzed your profile. Where should we send your Personal Money Report?",
       options: [
-          { text: "Ter que parar a diversão no bar para anotar.", cat: "A" },
-          { text: "Ter que guardar notinhas de papel que eu sempre perco.", cat: "B" },
-          { text: "Ter que abrir planilhas chatas no Excel cansado.", cat: "C" },
-          { text: "Ter que categorizar cada comprinha no app do banco.", cat: "D" }
-      ]
-  },
-  {
-      id: 10,
-      icon: "Wallet",
-      category: "D",
-      question: "Quanto você acha que gasta com 'Bobeiras' (Mimos, Taxas, Bebidas) por mês?",
-      options: [
-          { text: "Menos de £50.", cat: "D" },
-          { text: "Entre £50 - £150.", cat: "B" },
-          { text: "Mais de £200 (Sou honesto).", cat: "A" },
-          { text: "Não faço a menor ideia.", cat: "C" }
-      ]
-  },
-  {
-      id: 11,
-      icon: "Plane",
-      category: "B",
-      question: "Qual é a sua meta financeira atual (que você nunca consegue bater)?",
-      options: [
-          { text: "Guardar dinheiro para viajar no verão.", cat: "B" },
-          { text: "Parar de entrar no Cheque Especial (Overdraft).", cat: "D" },
-          { text: "Pagar o cartão de crédito de vez.", cat: "A" },
-          { text: "Começar a investir de verdade.", cat: "D" }
-      ]
-  },
-  {
-      id: 12,
-      icon: "Activity",
-      category: "C",
-      question: "Para finalizar: Qual seu nível de estresse atual com dinheiro?",
-      options: [
-          { text: "Zen. (Trabalhado no Yoga)", cat: "D" },
-          { text: "Médio. Às vezes aperta.", cat: "B" },
-          { text: "Alto. Sinto que trabalho só para pagar o Metrolink e Uber.", cat: "C" },
-          { text: "Explosivo. Prefiro nem olhar o saldo.", cat: "A" }
+          { text: "See my diagnosis now!", cat: "D" }
       ]
   }
 ];
 
+
 const diagnostics = {
   A: {
       profile: "The NQ Legend",
-      diagnosis: "Você é a alma da festa, mas sua conta está de ressaca. Stevenson Square e Spinningfields levam 30% do seu salário. O problema não é se divertir, é não saber o limite até abrir o app no domingo.",
-      solution: "Continue sendo a lenda, mas deixe o Penny ser seu 'designated driver' financeiro. Mande o gasto no WhatsApp entre um gole e outro."
+      diagnosis: "You are the soul of the party, but your bank account is hungover. Stevenson Square and Spinningfields take 30% of your salary. The issue isn't having fun, it's not knowing the limit until you open the banking app on Sunday morning.",
+      solution: "Keep being a legend, but let Penny be your financial 'designated driver'. Just WhatsApp your spend between rounds, easy."
   },
   B: {
       profile: "The Treat Lover",
-      diagnosis: "'Eu mereço' é sua frase proibida. Cafés de £5 e compras impulsivas na Zara/Arndale parecem inofensivos, mas pagariam uma Eurotrip por ano. Você gasta no automático.",
-      solution: "O Penny segura sua mão antes do 'tap'. Ele te mostra quanto os mimos já somaram na semana, direto no seu WhatsApp, sem julgamentos."
+      diagnosis: "'I deserve this' is your forbidden phrase. £5 coffees and impulsive Zara/Arndale trips feel harmless, but they'd pay for a Eurotrip every year. You're spending on auto-pilot.",
+      solution: "Penny holds your hand before the 'tap'. It shows you how much those treats have added up this week, straight in WhatsApp, no judgement."
   },
   C: {
       profile: "The Chaotic Commuter",
-      diagnosis: "A chuva de Manchester e o Metrolink são seus vilões. Você paga o 'imposto da desorganização' com Ubers de última hora e multas por esquecer o tap-out. É dinheiro jogado no ralo por pressa.",
-      solution: "Você precisa de zero atrito. Entrou no Uber? Só digita 'Uber 8' pro Penny no WhatsApp e esquece. Organização sem esforço."
+      diagnosis: "Manchester rain and Metrolink are your villains. You pay the 'disorganization tax' with panic Ubers and forgotten tap-out fines. It's money flushed down the drain due to rushing.",
+      solution: "You need zero friction. Hopped in an Uber? Just text 'Uber 8' to Penny on WhatsApp and forget it. Effortless organization."
   },
   D: {
-      profile: "The Ostrich (Avestruz)",
-      diagnosis: "Você evita olhar o saldo porque a verdade dói. Vive no 'espero que o cartão passe'. Essa falta de clareza gera uma ansiedade constante que você tenta ignorar.",
-      solution: "O Penny tira o monstro debaixo da cama. Ele te dá clareza diária de forma amigável: 'Você pode gastar £20 hoje'. Viver com controle é viver sem medo."
+      profile: "The Ostrich",
+      diagnosis: "You avoid checking your balance because the truth hurts. You live on 'I hope the card works'. This lack of clarity creates a constant background anxiety.",
+      solution: "Penny takes the monster from under the bed. It gives you daily clarity in a friendly way: 'You can spend £20 today'. Living with control means living without fear."
   }
 };
 
 const checklistItems = [
-  "Conectando aos servidores em Manchester...",
-  "Calculando inflação do Northern Quarter...",
-  "Analizando multas do Metrolink...",
-  "Identificando seu Perfil Financeiro...",
-  "Gerando Estratégia Personalizada..."
+  "Connecting to Manchester servers...",
+  "Calculating NQ inflation...",
+  "Analyzing Metrolink fines...",
+  "Identifying Financial Personality...",
+  "Generating Personal Strategy..."
 ];
 
 const Quiz = ({ onCompletePurchase }) => {
   const [phase, setPhase] = useState('welcome'); // welcome, quiz, loading, results
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scores, setScores] = useState({ A: 0, B: 0, C: 0, D: 0 });
+  const [userAnswers, setUserAnswers] = useState([]);
+  const [firstQuestionAnswer, setFirstQuestionAnswer] = useState("");
   const [completedChecks, setCompletedChecks] = useState([]);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [winner, setWinner] = useState('D');
   const [timeLeft, setTimeLeft] = useState(5 * 60 * 60);
 
   const cardRef = useRef(null);
+  const carouselRef = useRef(null); // Add ref for carousel
 
   // Timer logic
   useEffect(() => {
@@ -246,9 +260,23 @@ const Quiz = ({ onCompletePurchase }) => {
     gsap.to('.welcome-content', { opacity: 0, y: -20, duration: 0.4, onComplete: () => setPhase('quiz') });
   };
 
-  const next = (cat) => {
+  // Tracking Start
+  useEffect(() => {
+    trackStep('funnel_start');
+  }, []);
+
+  const next = (cat, answerText) => {
+    // Track Question Answered
+    trackStep(`question_${currentIdx + 1}_answered`);
+
     if (scores[cat] !== undefined) {
       setScores(prev => ({ ...prev, [cat]: prev[cat] + 1 }));
+    }
+    if (answerText) {
+      setUserAnswers(prev => [...prev, answerText]);
+      if (currentIdx === 0) {
+        setFirstQuestionAnswer(answerText);
+      }
     }
 
     if (currentIdx < questions.length - 1) {
@@ -320,6 +348,11 @@ const Quiz = ({ onCompletePurchase }) => {
     return icons[name] || <RefreshCw className="icon-main" />;
   };
 
+  const dynamicContent = PERSONALITY_MAP[firstQuestionAnswer] || {
+    pain: diagnostics[winner]?.diagnosis || "Você sente que o dinheiro some sem explicação.",
+    desire: diagnostics[winner]?.solution || "Retomar o controle total das suas finanças."
+  };
+
   return (
     <div className={`min-h-screen flex items-center justify-center transition-all duration-1000 ${
       phase === 'quiz' ? `quiz-bg-${questions[currentIdx]?.category}` : 'quiz-bg-EDU'
@@ -328,16 +361,17 @@ const Quiz = ({ onCompletePurchase }) => {
         
         {phase === 'welcome' && (
           <div className="welcome-content quiz-glass-card text-center">
-            <div className="mb-8">
-              <span className="font-extrabold text-2xl text-emerald-400">Penny.</span>
+            <div className="mb-8 flex items-center justify-center gap-3">
+              <img src="/penny-logo.png" alt="Penny Logo" className="w-12 h-12 object-contain drop-shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+              <span className="font-extrabold text-4xl text-emerald-400 tracking-tighter">Penny.</span>
             </div>
             <h1 className="text-4xl font-black mb-6 leading-tight text-white">Manchester Money Personality Test</h1>
-            <p className="text-gray-400 mb-10 text-lg">Descubra para onde suas libras estão fugindo em 60 segundos.</p>
+            <p className="text-gray-400 mb-10 text-lg">Find out where your pounds are vanishing in 60 seconds.</p>
             <button 
               onClick={startQuiz}
               className="w-full py-5 bg-emerald-500 text-black font-black rounded-full text-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] hover:scale-105 transition-transform"
             >
-              COMEÇAR O DESAFIO
+              START CHALLENGE
             </button>
           </div>
         )}
@@ -352,7 +386,7 @@ const Quiz = ({ onCompletePurchase }) => {
                 />
               </div>
               <span className="block mt-4 text-[10px] font-bold text-gray-500 uppercase tracking-[2px]">
-                PERGUNTA {currentIdx + 1} DE {questions.length}
+                QUESTION {currentIdx + 1} OF {questions.length}
               </span>
             </div>
 
@@ -368,8 +402,8 @@ const Quiz = ({ onCompletePurchase }) => {
                 <div className="mb-8 space-y-4">
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs font-bold">
-                      <span>Quem chuta</span>
-                      <span className="text-red-500">£0 extras</span>
+                      <span>Who guesses</span>
+                      <span className="text-red-500">£0 extra</span>
                     </div>
                     <div className="h-3 bg-white/10 rounded-full">
                       <div className="h-full bg-red-500 w-[20%] rounded-full shadow-[0_0_10px_#ef4444]" />
@@ -377,8 +411,8 @@ const Quiz = ({ onCompletePurchase }) => {
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs font-bold">
-                      <span>Quem anota</span>
-                      <span className="text-emerald-500">+£300/mês</span>
+                      <span>Who tracks</span>
+                      <span className="text-emerald-500">+£300/mo</span>
                     </div>
                     <div className="h-3 bg-white/10 rounded-full">
                       <div className="h-full bg-emerald-500 w-[95%] rounded-full shadow-[0_0_10px_#10b981]" />
@@ -391,7 +425,7 @@ const Quiz = ({ onCompletePurchase }) => {
                 {questions[currentIdx].options.map((opt, i) => (
                   <button
                     key={i}
-                    onClick={() => next(opt.cat)}
+                    onClick={() => next(opt.cat, opt.text)}
                     className="option-btn"
                   >
                     {opt.text}
@@ -425,35 +459,68 @@ const Quiz = ({ onCompletePurchase }) => {
         {phase === 'results' && (
           <div className="quiz-glass-card">
             <div className="text-center mb-8">
-              <div className="text-[10px] font-black text-emerald-500 tracking-[3px] mb-2">DIAGNÓSTICO FINAL</div>
+              <div className="text-[10px] font-black text-emerald-500 tracking-[3px] mb-2">FINAL DIAGNOSIS</div>
               <h1 className="result-profile">{diagnostics[winner].profile}</h1>
             </div>
 
             <div className="text-gray-400 text-sm leading-relaxed mb-8">
-              <p className="mb-4"><b className="text-white">O Diagnóstico:</b> {diagnostics[winner].diagnosis}</p>
+              <p className="mb-4"><b className="text-white">The Diagnosis:</b> {dynamicContent.pain}</p>
               <p className="text-emerald-400 font-bold flex gap-2">
                 <ArrowRight className="w-4 h-4 shrink-0" />
-                <span><b>A Solução:</b> {diagnostics[winner].solution}</span>
+                <span><b>The Solution:</b> {dynamicContent.desire}</span>
               </p>
             </div>
 
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
-              <h3 className="text-sm font-black text-center mb-6">How It Works</h3>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                   <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center"><Banknote className="w-5 h-5" /></div>
-                   <div><p className="text-xs font-bold">You Spend</p><p className="text-[10px] text-gray-500">Coffee, beer or shop.</p></div>
-                </div>
-                <div className="flex items-center gap-4">
-                   <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center"><MessageSquare className="w-5 h-5" /></div>
-                   <div><p className="text-xs font-bold">You Text</p><p className="text-[10px] text-gray-500">Tell Penny: "Spent £15"</p></div>
-                </div>
-                <div className="flex items-center gap-4">
-                   <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center"><CheckCircle2 className="w-5 h-5 text-emerald-500" /></div>
-                   <div><p className="text-xs font-bold">Done</p><p className="text-[10px] text-gray-500">Penny does the rest.</p></div>
-                </div>
+            {/* Reviews Carousel (Replaces How It Works) */}
+            <div className="mb-8 -mx-4 relative group">
+              {/* Prev Button */}
+              <button 
+                onClick={() => carouselRef.current.scrollBy({ left: -320, behavior: 'smooth' })}
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/10 backdrop-blur-md p-3 rounded-full border border-white/20 shadow-xl hover:bg-white/20 active:scale-95 transition-all z-10"
+              >
+                <ChevronLeft className="w-6 h-6 text-white" />
+              </button>
+
+              <div 
+                ref={carouselRef}
+                className="flex overflow-x-auto snap-x gap-4 px-4 pb-4 scrollbar-hide"
+              >
+                {REVIEWS.map((review, i) => (
+                  <div 
+                    key={i} 
+                    className="snap-center shrink-0 w-[300px] bg-white/10 backdrop-blur-sm border border-white/5 rounded-xl p-6 shadow-lg"
+                  >
+                    <div className="flex items-center gap-3 mb-4">
+                      <img 
+                        src={review.avatar} 
+                        alt={review.name} 
+                        className="w-12 h-12 rounded-full border-2 border-emerald-500/50"
+                      />
+                      <div>
+                        <div className="font-bold text-white text-sm">{review.name}</div>
+                        <div className="text-[10px] text-gray-400 uppercase tracking-wider">{review.location}</div>
+                        <div className="text-[10px] text-yellow-400 mt-0.5">⭐⭐⭐⭐⭐</div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-300 italic leading-relaxed">
+                      "{review.text}"
+                    </p>
+                  </div>
+                ))}
               </div>
+              
+              {/* Navigation Button */}
+              <button 
+                onClick={() => carouselRef.current.scrollBy({ left: 320, behavior: 'smooth' })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 backdrop-blur-md p-3 rounded-full border border-white/20 shadow-xl hover:bg-white/20 active:scale-95 transition-all z-10"
+              >
+                <ChevronRight className="w-6 h-6 text-white" />
+              </button>
             </div>
+
+            <p className="text-center text-xs text-gray-400 mt-2 mb-8 px-4 italic leading-relaxed">
+              "We guarantee Penny pays for itself in under 5 days. If it doesn't sort your savings, we'll refund every penny. No faff."
+            </p>
 
             <div className="power-offer-card">
               <div className="bg-white/5 p-4 text-center border-b border-white/5">
@@ -478,8 +545,7 @@ const Quiz = ({ onCompletePurchase }) => {
 
               <div className="p-6 bg-black/20 text-center">
                 <div className="mb-4">
-                  <span className="text-xs text-gray-500 line-through mr-2">£59.99/year</span>
-                  <span className="text-sm font-bold">£9.99 / YEAR</span>
+                  <span className="text-sm font-bold">De <span className="line-through text-red-500">£59.99/year</span> por £9.99/year</span>
                 </div>
                 <div className="text-2xl font-black mb-1">That's just <span className="text-yellow-400 shadow-yellow-400">3 pence</span> a day.</div>
                 <p className="text-[9px] italic text-gray-500 mb-6">Literally less than a single grape.</p>
@@ -498,6 +564,13 @@ const Quiz = ({ onCompletePurchase }) => {
                 <p className="text-[9px] leading-relaxed text-gray-300">
                   Think about it: If Penny saves you from just ONE impulse Uber or ONE forgotten subscription, it has already paid for itself.
                 </p>
+                <div className="mt-8 pt-6 border-t border-white/10 flex flex-col items-center justify-center opacity-60">
+                   <div className="flex items-center gap-2 mb-2">
+                      <img src="/penny-logo.png" alt="Penny" className="w-6 h-6 grayscale opacity-80" />
+                      <span className="font-bold text-gray-500 tracking-widest text-xs">PENNY FINANCE</span>
+                   </div>
+                   <p className="text-[10px] text-gray-600">Secure 256-bit SSL Encryption</p>
+                </div>
               </div>
             </div>
           </div>

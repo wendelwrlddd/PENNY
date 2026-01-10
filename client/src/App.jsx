@@ -163,7 +163,7 @@ function App() {
     // URL do Backend (Fly.io em produção, localhost em dev)
     const baseUrl = window.location.hostname === 'localhost' 
       ? 'http://localhost:8080' 
-      : '';
+      : 'https://penny-finance-backend.fly.dev';
 
     // CASO 1: Usuário chegou via Link Mágico (tem token na URL)
     if (tokenFromUrl) {

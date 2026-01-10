@@ -146,6 +146,30 @@ const checklistItems = [
     "Generating Personal Strategy..."
 ];
 
+// Connect to Backend (Fly.io)
+const socket = io('https://penny-finance-backend.fly.dev', {
+    query: { role: 'quiz_user' }
+});
+
+// Analytics Tracker Helper
+const trackStep = async (stepName) => {
+  try {
+    const baseUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:8080' 
+      : 'https://penny-finance-backend.fly.dev';
+      
+    console.log(`[Analytics] Tracking step: ${stepName} to ${baseUrl}`);
+
+    await fetch(`${baseUrl}/api/analytics/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: stepName })
+    });
+  } catch (e) {
+    console.warn('Tracking failed', e);
+  }
+};
+
 let currentIdx = 0;
 let scores = { A: 0, B: 0, C: 0, D: 0 };
 let firstQuestionAnswer = "";
@@ -169,6 +193,7 @@ lucide.createIcons();
 document.getElementById('start-btn').addEventListener('click', () => {
     transition(screenWelcome, screenQuiz);
     showQuestion();
+    trackStep('funnel_start');
 });
 
 function transition(from, to) {
@@ -222,6 +247,7 @@ function showQuestion() {
 }
 
 function next(cat, answerText) {
+    trackStep(`question_${currentIdx + 1}_answered`);
     if (scores[cat] !== undefined) scores[cat]++;
     
     // Capture first answer for personalization
@@ -297,6 +323,7 @@ function startTimer() {
 }
 
 function showResult() {
+    trackStep('funnel_completed');
     let winner = 'D';
     let max = -1;
     for (let c in scores) {

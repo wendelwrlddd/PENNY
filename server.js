@@ -14,6 +14,8 @@ import { sendMessage, logoutInstance, deleteInstance, sendPresence } from './lib
 import { generateSubscriptionLink } from './services/paypalService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
+import { Server } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +23,40 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: ['https://penny-finance.vercel.app', 'https://penny-finance-backend.fly.dev', 'http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5500'],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
 const PORT = process.env.PORT || 8080;
+
+// --- REAL-TIME PRESENCE ---
+io.on('connection', (socket) => {
+  const role = socket.handshake.query.role;
+  
+  if (role === 'quiz_user') {
+    socket.join('quiz_users');
+    broadcastQuizCount();
+    console.log(`[Socket] Quiz User Connected. ID: ${socket.id}`);
+  }
+
+  socket.on('disconnect', () => {
+    if (role === 'quiz_user') {
+      // Small delay to ensure room update
+      setTimeout(() => broadcastQuizCount(), 1000); 
+    }
+  });
+});
+
+function broadcastQuizCount() {
+  const count = io.sockets.adapter.rooms.get('quiz_users')?.size || 0;
+  io.emit('update_online', count);
+  console.log(`[Socket] Online Quiz Users: ${count}`);
+}
 
 // Update this list with authorized phone numbers (only digits)
 const ALLOWED_NUMBERS = [
@@ -29,7 +64,7 @@ const ALLOWED_NUMBERS = [
 ];
 
 app.use(cors({
-  origin: ['https://penny-finance.vercel.app', 'https://penny-finance-backend.fly.dev', 'http://localhost:5173', 'http://localhost:3000'],
+  origin: ['https://penny-finance.vercel.app', 'https://penny-finance-backend.fly.dev', 'http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5500'],
   credentials: true
 }));
 app.use(cookieParser());
@@ -139,54 +174,114 @@ async function generateUserToken(phoneNumber) {
  */
 app.post('/auth/login', async (req, res) => {
   const { token } = req.body;
-
-  if (!token) {
-    return res.status(400).json({ error: 'Token is required' });
-  }
+  if (!token) return res.status(400).json({ error: 'Token obrigatório' });
 
   try {
-    const usersSnapshot = await db.collection('usuarios')
-      .where('accessToken', '==', token)
-      .limit(1)
-      .get();
+    const usersRef = db.collection('usuarios');
+    const snapshot = await usersRef.where('accessToken', '==', token).get();
 
-    if (usersSnapshot.empty) {
-      console.warn(`[Auth] ❌ Invalid token attempt: ${token}`);
-      return res.status(401).json({ error: 'Unauthorized' });
+    if (snapshot.empty) {
+      return res.status(401).json({ error: 'Token inválido' });
     }
 
-    const userDoc = usersSnapshot.docs[0];
+    const userDoc = snapshot.docs[0];
     const userData = userDoc.data();
     const phoneNumber = userDoc.id;
 
-    // Gere um JWT assinado
-    const sessionToken = jwt.sign(
-      { uid: userDoc.id, phoneNumber: phoneNumber },
-      process.env.JWT_SECRET || 'penny-secret-key',
-      { expiresIn: '7d' }
-    );
+    // Gerar JWT
+    const jwtToken = jwt.sign({ uid: phoneNumber }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 
-    // Defina o cookie penny_session
-    res.cookie('penny_session', sessionToken, {
+    res.cookie('token', jwtToken, {
       httpOnly: true,
-      secure: true, // Deve ser true para SameSite: None
-      sameSite: 'None', 
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 dias
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'None',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    console.log(`[Auth] ✅ Session created for ${phoneNumber}`);
-    res.json({ 
-      success: true, 
-      user: { 
-        phoneNumber: phoneNumber,
-        onboarding_complete: userData.onboarding_complete 
-      } 
-    });
+    res.json({ success: true, user: { phoneNumber, ...userData } });
   } catch (error) {
-    console.error('[Auth] ❌ Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Login Error:", error);
+    res.status(500).json({ error: 'Erro interno' });
   }
 });
+
+// --- ANALYTICS ROUTES ---
+
+// 1. Track Step (POST)
+app.post('/api/analytics/track', async (req, res) => {
+  const { step } = req.body;
+  if (!step) {
+    return res.status(400).send({ error: 'Step is required' });
+  }
+
+  // Use the admin instance previously imported
+  const analyticsRef = db.collection('analytics').doc('quiz_funnel');
+  
+  // Create hourly key (e.g., "2026-01-09T18")
+  const hourKey = new Date().toISOString().slice(0, 13);
+  const hourlyRef = db.collection('analytics_hourly').doc(hourKey);
+
+  try {
+    const batch = db.batch();
+
+    // 1. Update Global Aggregate
+    batch.set(analyticsRef, {
+      [step]: admin.firestore.FieldValue.increment(1),
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // 2. Update Hourly History
+    batch.set(hourlyRef, {
+      hour: hourKey,
+      [step]: admin.firestore.FieldValue.increment(1),
+      last_updated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await batch.commit();
+
+    res.status(200).send({ success: true });
+  } catch (error) {
+    console.error('Analytics Write Error:', error);
+    res.status(500).send({ error: 'Internal Server Error' });
+  }
+});
+
+// 2. Get Stats (GET)
+app.get('/api/analytics/stats', async (req, res) => {
+  try {
+    const analyticsRef = db.collection('analytics').doc('quiz_funnel');
+    const doc = await analyticsRef.get();
+    if (!doc.exists) {
+      return res.json({});
+    }
+    res.json(doc.data());
+  } catch (error) {
+    console.error('Analytics Read Error:', error);
+    res.status(500).send({ error: 'Internal Server Error' });
+  }
+});
+
+// 3. Get Hourly History (GET)
+app.get('/api/analytics/hourly', async (req, res) => {
+  try {
+    const snapshot = await db.collection('analytics_hourly')
+      .orderBy('hour', 'desc')
+      .limit(24)
+      .get();
+
+    const history = [];
+    snapshot.forEach(doc => {
+      history.push(doc.data());
+    });
+
+    // Return chronological order (oldest to newest)
+    res.json(history.reverse());
+  } catch (error) {
+    console.error('Analytics History Error:', error);
+    res.status(500).send({ error: 'Internal Server Error' });
+  }
+});
+
 
 /**
  * 🔗 Gerar Link do PayPal via Web Funnel
@@ -1143,7 +1238,7 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
 });
 
-app.listen(PORT, () => { // Changed app.listen structure
+server.listen(PORT, '0.0.0.0', () => { // Changed app.listen structure
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
