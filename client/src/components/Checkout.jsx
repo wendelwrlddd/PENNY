@@ -38,7 +38,10 @@ const PaymentForm = ({ whatsapp, loadingParent, setLoadingParent }) => {
        try {
            await fetch("/api/verify-payment", {
                method: "POST", headers: { "Content-Type": "application/json" },
-               body: JSON.stringify({ paymentIntentId: paymentIntent.id }),
+               body: JSON.stringify({ 
+                   paymentIntentId: paymentIntent.id,
+                   whatsapp: whatsapp 
+               }),
            });
            window.location.href = `/thank-you?phone=${whatsapp}`;
        } catch (err) {
@@ -196,23 +199,23 @@ const Checkout = () => {
 
                     {/* DYNAMIC CONTENT AREA */}
                     <div className="min-h-[220px]">
-                        {whatsapp.length > 8 ? (
-                            paymentMethod === 'card' ? (
-                                stripePromise && clientSecret ? (
-                                    <Elements stripe={stripePromise} options={{ clientSecret }}>
-                                        <PaymentForm 
-                                            whatsapp={whatsapp} 
-                                            loadingParent={loading} 
-                                            setLoadingParent={setLoading} 
-                                        />
-                                    </Elements>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center p-12 bg-slate-50 rounded-2xl border border-slate-100 gap-4">
-                                        <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                                        <p className="text-xs text-slate-500 font-medium tracking-tight">Securing your payment session...</p>
-                                    </div>
-                                )
+                        {paymentMethod === 'card' ? (
+                            stripePromise && clientSecret ? (
+                                <Elements stripe={stripePromise} options={{ clientSecret }}>
+                                    <PaymentForm 
+                                        whatsapp={whatsapp} 
+                                        loadingParent={loading} 
+                                        setLoadingParent={setLoading} 
+                                    />
+                                </Elements>
                             ) : (
+                                <div className="flex flex-col items-center justify-center p-12 bg-slate-50 rounded-2xl border border-slate-100 gap-4">
+                                    <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                                    <p className="text-xs text-slate-500 font-medium tracking-tight">Securing your payment session...</p>
+                                </div>
+                            )
+                        ) : (
+                            whatsapp.length > 8 ? (
                                 <PayPalScriptProvider options={{ "client-id": import.meta.env.VITE_PAYPAL_CLIENT_ID, currency: "GBP" }}>
                                     <div className="animate-fadeIn space-y-6">
                                         <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex gap-3 items-start">
@@ -250,15 +253,15 @@ const Checkout = () => {
                                         />
                                     </div>
                                 </PayPalScriptProvider>
-                            )
-                        ) : (
-                            <div className="p-10 bg-slate-50 border border-slate-100 rounded-2xl text-slate-400 text-center space-y-3">
-                                <div className="inline-block p-3.5 bg-white rounded-2xl shadow-sm text-slate-300">
-                                    <Phone size={24} />
+                            ) : (
+                                <div className="p-10 bg-slate-50 border border-slate-100 rounded-2xl text-slate-400 text-center space-y-3">
+                                    <div className="inline-block p-3.5 bg-white rounded-2xl shadow-sm text-slate-300">
+                                        <Phone size={24} />
+                                    </div>
+                                    <p className="text-sm font-bold text-slate-500">Wait! Enter your WhatsApp first</p>
+                                    <p className="text-xs text-balance px-4 leading-relaxed">To unlock the PayPal secure payment buttons, we just need your WhatsApp number above.</p>
                                 </div>
-                                <p className="text-sm font-bold text-slate-500">Enter your WhatsApp number above</p>
-                                <p className="text-xs text-balance px-4 leading-relaxed">Please provide your WhatsApp number formatted with local dial code to securely unlock payment methods.</p>
-                            </div>
+                            )
                         )}
                     </div>
                     

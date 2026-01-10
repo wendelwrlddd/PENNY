@@ -444,7 +444,8 @@ app.post('/api/verify-payment', async (req, res) => {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         
         if (paymentIntent.status === 'succeeded') {
-            const whatsapp = paymentIntent.metadata.whatsapp;
+            // Pick whatsapp from body (passed from front) or metadata (passed during intent creation)
+            const whatsapp = req.body.whatsapp || paymentIntent.metadata.whatsapp;
             
             console.log(`[STRIPE] Pagamento confirmado para: ${whatsapp}`);
 
