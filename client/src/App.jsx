@@ -543,7 +543,7 @@ function AppContent() {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="py-32 px-6 bg-white/[0.01]">
+      <section id="pricing" className="relative z-10 py-32 px-6 bg-white/[0.01]">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-20">
             <h2 className="text-4xl lg:text-5xl font-bold mb-6">{t.pricingTitle}</h2>
@@ -577,7 +577,7 @@ function AppContent() {
             </div>
 
             {/* Annual Plan - Special Offer */}
-            <div className="pricing-card relative p-10 bg-primary/10 border-2 border-primary rounded-[32px] shadow-[0_0_40px_rgba(34,197,94,0.2)] transition-all hover:scale-[1.02] flex flex-col justify-between">
+            <div className="pricing-card relative z-20 p-10 bg-primary/10 border-2 border-primary rounded-[32px] shadow-[0_0_40px_rgba(34,197,94,0.2)] transition-all hover:scale-[1.02] flex flex-col justify-between">
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-primary text-black text-xs font-black rounded-full shadow-lg whitespace-nowrap">
                 {t.limitedOffer}
               </div>
@@ -600,7 +600,8 @@ function AppContent() {
               </div>
               <a 
                 href="https://penny-finance.vercel.app/checkout"
-                className="mt-12 w-full block text-center py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all cursor-pointer relative z-20"
+                target="_top"
+                className="mt-12 w-full block text-center py-4 bg-primary text-black font-black rounded-2xl hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all cursor-pointer relative z-30 pointer-events-auto"
               >
                 CLAIM OFFER NOW
               </a>
