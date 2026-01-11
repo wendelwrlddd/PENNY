@@ -956,11 +956,12 @@ app.post('/webhook', async (req, res) => {
       const from = message.from;
       
       // 🔒 Whitelist check FIRST (Silent Ignore)
-      const isAllowedMeta = ALLOWED_NUMBERS.some(num => from.includes(num));
-      if (!isAllowedMeta) {
-        console.log(`ℹ️ Meta: Ignorando mensagem de número não autorizado: ${from}`);
-        return;
-      }
+      // 🔒 Whitelist check DISABLED -- OPEN TO ALL
+      // const isAllowedMeta = ALLOWED_NUMBERS.some(num => from.includes(num));
+      // if (!isAllowedMeta) {
+      //   console.log(`ℹ️ Meta: Ignorando mensagem de número não autorizado: ${from}`);
+      //   return;
+      // }
 
       // --- GATEKEEPER (META) ---
       if (message.type === 'audio' || message.type === 'voice') {
@@ -1002,10 +1003,11 @@ app.post('/webhook', async (req, res) => {
       const sender = key?.remoteJid?.split('@')[0];
 
       // 🔒 Whitelist check FIRST (Silent Ignore)
-      if (!sender || !ALLOWED_NUMBERS.some(num => sender.includes(num))) {
-        console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
-        return;
-      }
+      // 🔒 Whitelist check DISABLED -- OPEN TO ALL
+      // if (!sender || !ALLOWED_NUMBERS.some(num => sender.includes(num))) {
+      //   console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
+      //   return;
+      // }
 
       // --- GATEKEEPER (EVOLUTION) ---
       const isAudio = message?.audioMessage || message?.pttMessage;
