@@ -815,8 +815,14 @@ async function processMessageBackground(text, sender, instance, source) {
         }
 
         // --- FINAL RESPONSE ---
+        // --- FINAL RESPONSE ---
         if (source === 'whatsapp-evolution' && transactionData.response_message) {
-          await sendMessage(instance, sender, transactionData.response_message);
+          try {
+             await sendMessage(instance, sender, transactionData.response_message);
+          } catch (sendErr) {
+             console.error(`[Background] ⚠️ Failed to send response: ${sendErr.message}`);
+             // Don't throw, just log. This prevents the server from crashing.
+          }
         }
         replied = true;
     })();
@@ -827,13 +833,24 @@ async function processMessageBackground(text, sender, instance, source) {
     if (replied) return;
     replied = true;
     console.error(`[Background] ❌ Process Error: ${error.message}`);
-    const errorMsg = isBrazil 
+    
+    // Safety check for isBrazil
+    const safeIsBrazil = typeof isBrazil !== 'undefined' ? isBrazil : false;
+
+    const errorMsg = safeIsBrazil 
       ? `❌ *Nossos servidores estão com problemas*, espere um momento.`
       : `❌ *Our servers are having trouble*, please wait a moment.`;
-    await sendMessage(instance, sender, errorMsg);
+      
+    try {
+        await sendMessage(instance, sender, errorMsg);
+    } catch (finalErr) {
+        console.error(`[Background] 💀 Failed to send ERROR message: ${finalErr.message}`);
+    }
   } finally {
     if (source === 'whatsapp-evolution') {
-      sendPresence(instance, sender, "available").catch(() => {});
+      try {
+        await sendPresence(instance, sender, "available");
+      } catch (e) {}
     }
   }
 }
