@@ -1017,6 +1017,7 @@ app.post('/webhook', async (req, res) => {
       const message = data.message;
       const key = data.key;
       const instance = body.instance || body.sender || 'UnknownInstance';
+      console.log(`📱 [Instance] Using: ${instance}`);
       const remoteJid = key?.remoteJid;
       const participant = key?.participant; // Fallback for group messages or @lid sessions
       
