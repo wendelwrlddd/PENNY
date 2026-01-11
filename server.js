@@ -1018,9 +1018,30 @@ app.post('/webhook', async (req, res) => {
       const key = data.key;
       const instance = body.instance || body.sender || 'UnknownInstance';
       const remoteJid = key?.remoteJid;
-      const senderNumber = remoteJid?.split('@')[0];
-      const sender = senderNumber; // Keep 'sender' variable for compatibility with existing code that expects just digits
-      const senderJid = remoteJid; // New variable for the full JID
+      const participant = key?.participant; // Fallback for group messages or @lid sessions
+      
+      // 🚨 CRITICAL: Reject @lid sessions (they can't receive messages)
+      if (remoteJid && remoteJid.includes('@lid')) {
+        console.log(`⛔ [CRITICAL] Session is in @lid mode. Cannot send messages to: ${remoteJid}`);
+        console.log(`📌 SOLUTION: Delete and recreate the Evolution instance with a proper WhatsApp Business account.`);
+        console.log(`📌 Current remoteJid: ${remoteJid}`);
+        console.log(`📌 Participant (if any): ${participant || 'N/A'}`);
+        return; // Stop processing - can't respond to @lid
+      }
+      
+      // Try to get real number from participant if remoteJid is invalid
+      const actualJid = (remoteJid && remoteJid.includes('@s.whatsapp.net')) 
+        ? remoteJid 
+        : (participant && participant.includes('@s.whatsapp.net') ? participant : null);
+      
+      if (!actualJid) {
+        console.log(`⛔ [ERROR] No valid JID found. remoteJid: ${remoteJid}, participant: ${participant}`);
+        return;
+      }
+      
+      const senderNumber = actualJid.split('@')[0];
+      const sender = senderNumber;
+      const senderJid = actualJid;
 
       // 🔒 Whitelist check FIRST (Silent Ignore)
       // 🔒 Whitelist check DISABLED -- OPEN TO ALL
