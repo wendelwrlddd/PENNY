@@ -557,12 +557,13 @@ const Quiz = ({ onCompletePurchase }) => {
                   </div>
                 </div>
 
-                <button 
-                  className="w-full py-4 bg-[#00D09C] text-black font-black text-lg rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,208,156,0.3)] flex items-center justify-center gap-2"
-                  onClick={onCompletePurchase}
+                <a 
+                  href="/checkout"
+                  className="w-full py-4 bg-[#00D09C] text-black font-black text-lg rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,208,156,0.3)] flex items-center justify-center gap-2 relative z-50 cursor-pointer text-decoration-none"
+                  style={{ position: 'relative', zIndex: 9999 }}
                 >
                   CLAIM OFFER NOW <ArrowRight className="w-6 h-6" />
-                </button>
+                </a>
                 
                 <p className="mt-3 text-[11px] text-emerald-400/80 font-medium uppercase tracking-wide">
                   Save over £300 in your first few weeks
