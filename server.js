@@ -1017,7 +1017,10 @@ app.post('/webhook', async (req, res) => {
       const message = data.message;
       const key = data.key;
       const instance = body.instance || body.sender || 'UnknownInstance';
-      const sender = key?.remoteJid?.split('@')[0];
+      const remoteJid = key?.remoteJid;
+      const senderNumber = remoteJid?.split('@')[0];
+      const sender = senderNumber; // Keep 'sender' variable for compatibility with existing code that expects just digits
+      const senderJid = remoteJid; // New variable for the full JID
 
       // 🔒 Whitelist check FIRST (Silent Ignore)
       // 🔒 Whitelist check DISABLED -- OPEN TO ALL
@@ -1055,7 +1058,7 @@ app.post('/webhook', async (req, res) => {
         }
 
         // Whitelist was already checked at the top of Case 2
-        processMessageBackground(text, sender, instance, 'whatsapp-evolution');
+        processMessageBackground(text, senderJid, instance, 'whatsapp-evolution');
       } else {
         console.log('ℹ️ Evolution: No text or sender found');
       }
