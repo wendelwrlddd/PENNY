@@ -592,14 +592,16 @@ async function processMessageBackground(text, sender, instance, source) {
 
     console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
 
-    // --- WHITELIST CHECK ---
-    const cleanSender = sender.replace(/\D/g, '');
-    const isAllowed = ALLOWED_NUMBERS.some(num => cleanSender.includes(num));
+    // --- WHITELIST CHECK REMOVED (As requested: Open to all) ---
+    // const cleanSender = sender.replace(/\D/g, '');
+    // const isAllowed = ALLOWED_NUMBERS.some(num => cleanSender.includes(num));
 
-    if (!isAllowed) {
-       console.log(`[Security] ⛔ Blocked unauthorized number: ${sender}`);
-       return; 
-    }
+    // if (!isAllowed) {
+    //    console.log(`[Security] ⛔ Blocked unauthorized number: ${sender}`);
+    //    return; 
+    // }
+    
+    console.log(`[Security] 🔓 Access granted to: ${sender} (Open Mode)`);
 
     // Lógica de Timeout (Safety Net)
     const timeoutPromise = new Promise((_, reject) => {
