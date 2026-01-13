@@ -13,8 +13,6 @@ primary_region = "gru"
 
 [env]
   AUTHENTICATION_TYPE = "apikey"
-  DATABASE_ENABLED = "false"
-  DATABASE_PROVIDER = "postgresql" # Added to prevent Prisma errors even if disabled
   STORE_MESSAGES = "true"
 
 [[mounts]]

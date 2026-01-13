@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Penny - Conectar WhatsApp</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 48px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 32px;
+      color: #1a202c;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      color: #718096;
+      font-size: 16px;
+      margin-bottom: 32px;
+    }
+
+    #qrcode {
+      display: flex;
+      justify-content: center;
+      margin: 32px 0;
+      padding: 24px;
+      background: #f7fafc;
+      border-radius: 16px;
+      min-height: 300px;
+      align-items: center;
+    }
+
+    .status {
+      padding: 16px 24px;
+      border-radius: 12px;
+      font-weight: 600;
+      margin-top: 24px;
+      font-size: 14px;
+    }
+
+    .status.loading {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status.connected {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .instructions {
+      background: #edf2f7;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 24px;
+      text-align: left;
+    }
+
+    .instructions h3 {
+      font-size: 14px;
+      color: #2d3748;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    .instructions ol {
+      margin-left: 20px;
+      color: #4a5568;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    .spinner {
+      border: 4px solid #e2e8f0;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .refresh-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 16px;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+    }
+
+    .refresh-btn:active {
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📱 Conectar WhatsApp</h1>
+    <p class="subtitle">Penny Finance - Baileys Integration</p>
+
+    <div id="qrcode">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="status" class="status loading">
+      ⏳ Aguardando QR Code...
+    </div>
+
+    <button class="refresh-btn" onclick="checkQR()">🔄 Atualizar</button>
+
+    <div class="instructions">
+      <h3>📋 Como Conectar:</h3>
+      <ol>
+        <li>Abra o <strong>WhatsApp</strong> no seu celular</li>
+        <li>Toque em <strong>Mais opções</strong> ou <strong>Configurações</strong></li>
+        <li>Selecione <strong>Aparelhos conectados</strong></li>
+        <li>Toque em <strong>Conectar um aparelho</strong></li>
+        <li>Aponte a câmera para este QR Code</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    let checkInterval;
+
+    async function checkQR() {
+      try {
+        const response = await fetch('/api/baileys/qr');
+        const data = await response.json();
+
+        const qrDiv = document.getElementById('qrcode');
+        const statusDiv = document.getElementById('status');
+
+        if (data.connected) {
+          qrDiv.innerHTML = '<div style="font-size: 64px;">✅</div>';
+          statusDiv.className = 'status connected';
+          statusDiv.textContent = '✅ WhatsApp Conectado!';
+          clearInterval(checkInterval);
+        } else if (data.qr) {
+          // Mostra o QR Code como imagem gerada pelo servidor
+          qrDiv.innerHTML = `<img src="/api/baileys/qr-image" alt="QR Code" style="max-width: 100%; border-radius: 8px;" />`;
+          statusDiv.className = 'status loading';
+          statusDiv.textContent = '📱 Escaneie o QR Code com o WhatsApp';
+        } else {
+          qrDiv.innerHTML = '<div class="spinner"></div>';
+          statusDiv.className = 'status loading';
+          statusDiv.textContent = '⏳ Aguardando QR Code...';
+        }
+      } catch (error) {
+        console.error('Erro:', error);
+        document.getElementById('status').className = 'status error';
+        document.getElementById('status').textContent = '❌ Erro ao conectar com servidor';
+      }
+    }
+
+    // Verifica a cada 2 segundos
+    checkQR();
+    checkInterval = setInterval(checkQR, 2000);
+  </script>
+</body>
+</html>

@@ -25,11 +25,15 @@ dist-ssr
 
 # Environment variables
 .env
-.env.local
-.env.*.local
+.env*
+!.env.example
 
-# Firebase service account
+# Firebase & Secrets
+serviceAccountKey.json
 *firebase*adminsdk*.json
+
+# Baileys Session
+auth_info_baileys/
 
 .vercel
 VERCEL_IMPORT_PRONTO.txt

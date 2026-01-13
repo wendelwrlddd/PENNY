@@ -18,6 +18,17 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import { Server } from 'socket.io';
 
+// 🆕 BAILEYS - WhatsApp direto (substitui Evolution API)
+import { 
+  connectWhatsApp, 
+  sendTextMessage as baileysendTextMessage,
+  sendPresence as baileysSendPresence,
+  getQRCode,
+  getConnectionStatus,
+  disconnectWhatsApp 
+} from './lib/baileys.js';
+import { handleIdentityVerification } from './lib/verification.js';
+
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
@@ -94,6 +105,11 @@ app.get('/', (req, res) => {
   res.status(200).send('Penny Finance API is OK');
 });
 
+// 🆕 Baileys QR Code Page
+app.get('/baileys', (req, res) => {
+  res.sendFile(path.join(__dirname, 'baileys-qr.html'));
+});
+
 app.head('/', (req, res) => {
   console.log('🚨 DEBUG: HEAD / recebido - Meta está acessando URL errada!');
   console.log('Headers:', JSON.stringify(req.headers, null, 2));
@@ -151,6 +167,63 @@ app.post('/api/sys/disarm', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: error.message });
     }
+  }
+});
+
+// 🆕 BAILEYS ROUTES
+// Get QR Code for WhatsApp connection
+app.get('/api/baileys/qr', (req, res) => {
+  const qr = getQRCode();
+  const status = getConnectionStatus();
+  
+  if (status) {
+    return res.json({ connected: true, message: 'WhatsApp já conectado!' });
+  }
+  
+  if (!qr) {
+    return res.json({ connected: false, qr: null, message: 'Aguardando QR Code...' });
+  }
+  
+  res.json({ connected: false, qr, message: 'Escaneie o QR Code' });
+});
+
+// Get connection status
+app.get('/api/baileys/status', (req, res) => {
+  const status = getConnectionStatus();
+  res.json({ connected: status });
+});
+
+// Disconnect from WhatsApp
+app.post('/api/baileys/disconnect', async (req, res) => {
+  try {
+    await disconnectWhatsApp();
+    res.json({ success: true, message: 'Desconectado do WhatsApp' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate QR Code image
+app.get('/api/baileys/qr-image', async (req, res) => {
+  const QRCode = require('qrcode');
+  const qr = getQRCode();
+  
+  if (!qr) {
+    return res.status(404).send('QR Code não disponível');
+  }
+  
+  try {
+    const qrImage = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
+    const base64Data = qrImage.replace(/^data:image\/png;base64,/, '');
+    const img = Buffer.from(base64Data, 'base64');
+    
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': img.length
+    });
+    res.end(img);
+  } catch (error) {
+    res.status(500).send('Erro ao gerar QR Code');
   }
 });
 
@@ -580,17 +653,23 @@ app.post('/webhooks/paypal', async (req, res) => {
 });
 
 // Helper function to process message in background
-async function processMessageBackground(text, sender, instance, source) {
+async function processMessageBackground(text, sender, instance, source, dbUserId = null) {
   let replied = false; 
-  let isBrazil = sender.startsWith('55'); 
+  let isBrazil = sender.startsWith('55'); // Default guess from JID, might be wrong for LID
+  const effectiveUserId = dbUserId || sender; // Use Verified Phone if available
+
+  // If verified phone (dbUserId) exists, recalculate isBrazil based on it
+  if (dbUserId) {
+      isBrazil = dbUserId.startsWith('55');
+  }
 
   try {
     // 1. Feedback Visual Imediato (Digitando...)
-    if (source === 'whatsapp-evolution') {
+    if (source === 'whatsapp-evolution' || source === 'whatsapp-baileys') {
       sendPresence(instance, sender, "composing").catch(() => {});
     }
 
-    console.log(`[Background] 💬 Processing from ${sender} (${source}): ${text}`);
+    console.log(`[Background] 💬 Processing from ${sender} (DB: ${effectiveUserId}) via ${source}: ${text}`);
 
     // --- WHITELIST CHECK REMOVED (As requested: Open to all) ---
     // const cleanSender = sender.replace(/\D/g, '');
@@ -609,7 +688,7 @@ async function processMessageBackground(text, sender, instance, source) {
     });
 
     const executionPromise = (async () => {
-        const userRef = db.collection('usuarios').doc(sender);
+        const userRef = db.collection('usuarios').doc(effectiveUserId);
         const userSnap = await userRef.get();
         const userData = userSnap.data() || {};
         
@@ -665,7 +744,7 @@ async function processMessageBackground(text, sender, instance, source) {
         }
 
         if (upperText === '#PREMIUM') {
-            const link = await generateSubscriptionLink(sender);
+            const link = await generateSubscriptionLink(effectiveUserId);
             const msg = isBrazil
                 ? `🚀 *Penny Premium*\n\nClique no link abaixo para assinar o Penny Premium por £9.99/mês e liberar recursos exclusivos:\n\n${link}`
                 : `🚀 *Penny Premium*\n\nClick the link below to subscribe to Penny Premium for £9.99/month and unlock exclusive features:\n\n${link}`;
@@ -707,7 +786,7 @@ async function processMessageBackground(text, sender, instance, source) {
           healthRatioWeek: totals.healthRatioWeek,
           lastAction: userData.lastAction || 'none',
           onboardingStep: currentStep, 
-          dashboard_link: `https://penny-finance.vercel.app/?token=${await generateUserToken(sender)}`
+          dashboard_link: `https://penny-finance.vercel.app/?token=${await generateUserToken(effectiveUserId)}`
         };
 
         // --- AI CALL ---
@@ -716,7 +795,7 @@ async function processMessageBackground(text, sender, instance, source) {
         if (replied) return;
 
         if (!transactionData || transactionData.intent === 'NO_ACTION') {
-          if (transactionData?.response_message && source === 'whatsapp-evolution') {
+          if (transactionData?.response_message && (source === 'whatsapp-evolution' || source === 'whatsapp-baileys')) {
             await sendMessage(instance, sender, transactionData.response_message);
           }
           replied = true;
@@ -816,7 +895,7 @@ async function processMessageBackground(text, sender, instance, source) {
 
         // --- FINAL RESPONSE ---
         // --- FINAL RESPONSE ---
-        if (source === 'whatsapp-evolution' && transactionData.response_message) {
+        if ((source === 'whatsapp-evolution' || source === 'whatsapp-baileys') && transactionData.response_message) {
           try {
              await sendMessage(instance, sender, transactionData.response_message);
           } catch (sendErr) {
@@ -1021,13 +1100,40 @@ app.post('/webhook', async (req, res) => {
       const remoteJid = key?.remoteJid;
       const participant = key?.participant; // Fallback for group messages or @lid sessions
       
-      // 🚨 CRITICAL: Reject @lid sessions (they can't receive messages)
+      // 🔧 MODIFIED: Try to process @lid sessions by converting to @s.whatsapp.net
       if (remoteJid && remoteJid.includes('@lid')) {
-        console.log(`⛔ [CRITICAL] Session is in @lid mode. Cannot send messages to: ${remoteJid}`);
-        console.log(`📌 SOLUTION: Delete and recreate the Evolution instance with a proper WhatsApp Business account.`);
-        console.log(`📌 Current remoteJid: ${remoteJid}`);
+        console.log(`⚠️ [WARNING] Session is in @lid mode: ${remoteJid}`);
+        console.log(`🔧 [ATTEMPT] Trying to convert @lid to @s.whatsapp.net and force send...`);
+        
+        // Extract the number and force @s.whatsapp.net format
+        const numberOnly = remoteJid.split('@')[0];
+        const forcedJid = `${numberOnly}@s.whatsapp.net`;
+        
+        console.log(`📌 Original JID: ${remoteJid}`);
+        console.log(`📌 Forced JID: ${forcedJid}`);
         console.log(`📌 Participant (if any): ${participant || 'N/A'}`);
-        return; // Stop processing - can't respond to @lid
+        
+        // Continue processing with forced JID
+        const sender = numberOnly;
+        const senderJid = forcedJid;
+        
+        const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
+        
+        console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
+
+        if (text && sender) {
+          // --- LENGTH CHECK ---
+          if (text.length > 200) {
+            console.log(`ℹ️ [Gatekeeper] Message too long (${text.length} chars) from ${sender}`);
+            await sendMessage(instance, sender, "Your message is too long, mate. Please keep it short. 📉");
+            return;
+          }
+
+          processMessageBackground(text, senderJid, instance, 'whatsapp-evolution');
+        } else {
+          console.log('ℹ️ Evolution: No text or sender found');
+        }
+        return;
       }
       
       // Try to get real number from participant if remoteJid is invalid
@@ -1473,17 +1579,45 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
 });
 
-server.listen(PORT, '0.0.0.0', () => { // Changed app.listen structure
+server.listen(PORT, '0.0.0.0', async () => { // Changed to async
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
-  console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? `✅ Set (${process.env.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ Missing'}`);
+  
+  // 🆕 Inicializar Baileys (WhatsApp direto)
+  console.log('📱 Iniciando conexão com WhatsApp via Baileys...');
+  try {
+    await connectWhatsApp(async (from, text, msg) => {
+      console.log(`📩 [Baileys] Mensagem crua de ${from}: ${text}`);
+
+      // 🔒 VERIFICAÇÃO DE IDENTIDADE (LID <-> PHONE)
+      // Se não verificado, o handler cuida da interação e retorna null
+      const verifiedPhone = await handleIdentityVerification(db, from, text);
+      
+      if (!verifiedPhone) {
+          console.log(`🔒 [Security] Usuário ${from} em fluxo de verificação ou bloqueado.`);
+          return; // Não processa a mensagem como comando/bot
+      }
+
+      console.log(`🔓 [Security] Usuário verificado: ${from} -> ${verifiedPhone}`);
+      
+      // ✅ USUÁRIO VERIFICADO!
+      // Processa a mensagem usando:
+      // - text: Texto da mensagem
+      // - sender: 'from' (LID original, para responder corretamente)
+      // - instance: 'baileys'
+      // - source: 'whatsapp-baileys'
+      // - dbUserId: verifiedPhone (ID real do banco de dados)
+      await processMessageBackground(text, from, 'baileys', 'whatsapp-baileys', verifiedPhone);
+    });
+    console.log('✅ Baileys inicializado com sucesso!');
+  } catch (error) {
+    console.error('❌ Erro ao inicializar Baileys:', error.message);
+  }
   
   // Migration for UK users
-  runMigration(); // Removed await as it's not an async function anymore, or wrap in IIFE if needed.
-                  // Assuming runMigration is now called without await in this context.
-                  // If runMigration is truly async and needs to complete before other things,
-                  // this part might need adjustment (e.g., an IIFE or moving it to a separate init function).
+  runMigration();
 
   // Initial run in 10 seconds to not block startup
   setTimeout(checkProactiveMessages, 10000);
