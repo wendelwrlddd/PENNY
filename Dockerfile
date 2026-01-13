@@ -16,6 +16,9 @@ RUN npm install --omit=dev
 
 COPY . .
 
+# Criar diretório para volume
+RUN mkdir -p /app/auth_info_baileys
+
 EXPOSE 8080
 
 CMD [ "node", "server.js" ]
