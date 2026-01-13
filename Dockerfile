@@ -1,12 +1,19 @@
-FROM node:18-slim
+FROM node:20-slim
 
 WORKDIR /app
 
-# Copy package files and install production dependencies
+# Instalar dependências necessárias para Baileys/Puppeteer se precisar (slim é muito limpo)
+# Baileys puro não precisa de chrome, mas pode precisar de libs básicas
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
+
+# Instalar dependências de produção
 RUN npm install --omit=dev
 
-# Copy all files (including pre-built client/dist if not ignored)
 COPY . .
 
 EXPOSE 8080
