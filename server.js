@@ -105,9 +105,22 @@ app.get('/', (req, res) => {
   res.status(200).send('Penny Finance API is OK');
 });
 
-// 🆕 Baileys QR Code Page
+// 🆕 Baileys QR Code Page (PROTECTED)
 app.get('/baileys', (req, res) => {
-  res.sendFile(path.join(__dirname, 'baileys-qr.html'));
+  const auth = { login: 'LAVINIAMEUAMOR', password: 'AmIAc2c-o@n!' };
+
+  // Parse "Basic" auth header
+  const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+  // Verify login and password
+  if (login && password && login === auth.login && password === auth.password) {
+    return res.sendFile(path.join(__dirname, 'baileys-qr.html'));
+  }
+
+  // Access denied...
+  res.set('WWW-Authenticate', 'Basic realm="401"');
+  res.status(401).send('Access restricted. Please log in.');
 });
 
 app.head('/', (req, res) => {
@@ -197,7 +210,7 @@ app.get('/api/baileys/status', (req, res) => {
 app.post('/api/baileys/disconnect', async (req, res) => {
   try {
     await disconnectWhatsApp();
-    res.json({ success: true, message: 'Desconectado do WhatsApp' });
+    res.json({ success: true, message: 'Disconnected from WhatsApp' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -553,7 +566,7 @@ app.post('/api/pay/generate-link', async (req, res) => {
   let { phoneNumber } = req.body;
 
   if (!phoneNumber) {
-    return res.status(400).json({ error: 'Número de telefone é obrigatório.' });
+    return res.status(400).json({ error: 'Phone number is required.' });
   }
 
   // Sanitização: Manter apenas números
@@ -561,7 +574,7 @@ app.post('/api/pay/generate-link', async (req, res) => {
 
   // Validação mínima (ex: código do país + no mínimo 8 dígitos)
   if (cleanPhone.length < 10) {
-    return res.status(400).json({ error: 'Número de telefone inválido. Certifique-se de incluir o código do país.' });
+    return res.status(400).json({ error: 'Invalid phone number. Make sure to include the country code.' });
   }
 
   try {
@@ -575,7 +588,7 @@ app.post('/api/pay/generate-link', async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Generate Link Error:', error.message);
-    res.status(500).json({ error: 'Erro interno ao gerar link de pagamento.' });
+    res.status(500).json({ error: 'Internal error generating payment link.' });
   }
 });
 
@@ -743,6 +756,49 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
             return;
         }
 
+        if (upperText === '!RESETE199') {
+            const batch = db.batch();
+
+            // 1. Apagar Transações
+            const txs = await userRef.collection('transactions').get();
+            txs.docs.forEach(doc => batch.delete(doc.ref));
+
+            // 2. Apagar Links de Verificação (wa_links)
+            const linksSnap = await db.collection('wa_links').where('phone', '==', effectiveUserId).get();
+            linksSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+            // 3. Apagar Sessões Ativas (wa_sessions)
+            const sessionsSnap = await db.collection('wa_sessions').where('phone', '==', effectiveUserId).get();
+            sessionsSnap.docs.forEach(doc => batch.delete(doc.ref));
+            // Tenta apagar pelo ID também se for o numero
+            const specificSession = db.collection('wa_sessions').doc(effectiveUserId);
+            batch.delete(specificSession);
+
+            // 4. Resetar Perfil (Mantendo Premium)
+             const seedData = {
+                phone: effectiveUserId,
+                status: 'active',
+                plan: 'premium',
+                subscriptionStatus: 'active',
+                // premiumSince: new Date().toISOString(), // Keep original if possible, or just reset
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                onboarding_complete: false,
+                features: { ukMode: true } // FORCE ENGLISH (UK)
+            };
+            
+            // Usando set SEM merge apaga tudo que não estiver em seedData
+            // Isso resolve o erro do FieldValue.delete() e garante limpeza total
+            batch.set(userRef, seedData);
+
+            await batch.commit();
+
+            const reply = "🔄 *HARD RESET COMPLETE!* (UK Mode)\n\nData cleared. Premium restored.\nSend 'Hi' to start fresh.";
+            await sendMessage(instance, sender, reply);
+            replied = true;
+            return;
+        }
+
         if (upperText === '#PREMIUM') {
             const link = await generateSubscriptionLink(effectiveUserId);
             const msg = isBrazil
@@ -763,6 +819,8 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                 if (data.incomeType === 'hourly') {
                     if (!data.hourlyRate) return "ASK_HOURLY_RATE";
                     if (!data.weeklyHours) return "ASK_WEEKLY_HOURS";
+                } else if (data.incomeType === 'weekly') {
+                    if (!data.monthlyIncome && !data.weeklyIncome) return "ASK_WEEKLY_INCOME";
                 } else {
                     if (!data.monthlyIncome) return "ASK_MONTHLY_INCOME";
                 }
@@ -775,11 +833,13 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
         const aiState = {
           incomeType: userData.incomeType || null,
           monthlyIncome: userData.monthlyIncome || null,
+          weeklyIncome: userData.weeklyIncome || null,
           hourlyRate: userData.hourlyRate || null,
           weeklyHours: userData.weeklyHours || null,
           payFrequency: userData.payFrequency || null,
           currentBalance: totals.currentBalance,
           totalToday: totals.totalDia,
+          todayCategoryTotals: totals.todayCategoryTotals,
           totalMonth: totals.totalMes,
           totalWeek: totals.totalSemana,
           healthRatioMonth: totals.healthRatioMonth,
@@ -817,6 +877,11 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
             const rate = userData.hourlyRate || 0;
             const estMonthly = (rate * hours * 4.33);
             await userRef.update({ weeklyHours: hours, monthlyIncome: estMonthly });
+        }
+        if (transactionData.intent === 'SET_WEEKLY_INCOME') {
+            const weekly = parseFloat(transactionData.weekly_income || transactionData.amount);
+            const monthly = weekly * 52 / 12;
+            await userRef.update({ weeklyIncome: weekly, monthlyIncome: monthly, incomeType: 'weekly' });
         }
         if (transactionData.intent === 'SET_MONTHLY_INCOME') await userRef.update({ monthlyIncome: parseFloat(transactionData.monthly_income), incomeType: 'monthly' });
         
@@ -950,6 +1015,8 @@ async function calculateUserTotals(userRef, isBrazil, userData = {}) {
   let totalIncome = 0;
   let totalExpenses = 0;
 
+  let todayCategoryTotals = {};
+
   totalsSnapshot.forEach(doc => {
     const data = doc.data();
     const amt = parseFloat(data.amount || 0);
@@ -964,7 +1031,11 @@ async function calculateUserTotals(userRef, isBrazil, userData = {}) {
       const createdTodayStr = created.toLocaleDateString('en-CA', { timeZone: tz });
       const createdMonthStr = createdTodayStr.substring(0, 7);
 
-      if (createdTodayStr === todayStr) totalDia += amt;
+      if (createdTodayStr === todayStr) {
+        totalDia += amt;
+        const cat = data.category || 'Other';
+        todayCategoryTotals[cat] = (todayCategoryTotals[cat] || 0) + amt;
+      }
       if (createdMonthStr === monthStr) totalMes += amt;
     }
   });
@@ -991,6 +1062,7 @@ async function calculateUserTotals(userRef, isBrazil, userData = {}) {
   const healthRatioWeek = expectedWeeklySoFar > 0 ? (totalSemana / expectedWeeklySoFar) : 0;
 
   return {
+    todayCategoryTotals,
     totalDia,
     totalMes,
     totalSemana,
