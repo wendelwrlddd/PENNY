@@ -268,7 +268,7 @@ app.get('/api/baileys/qr-image', async (req, res) => {
 });
 
 // 🆕 Evolution QR Code Page
-app.get('/evolution/qr', async (req, res) => {
+app.get('/api/evolution/qr', async (req, res) => {
   const axios = require('axios');
   const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'https://penny-evolution-api.fly.dev';
   const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'PENNY_SECURE_KEY_2024';
