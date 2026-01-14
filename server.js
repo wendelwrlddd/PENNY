@@ -1717,3 +1717,13 @@ async function runMigration() {
         console.error('❌ [Migration] Error:', err.message);
     }
 }
+
+// --- SAFETY NET (ALWAYS ONLINE) ---
+// Prevent process from crashing on unhandled errors
+process.on('uncaughtException', (err) => {
+    console.error('?? [CRITICAL] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('?? [CRITICAL] Unhandled Rejection:', reason);
+});
