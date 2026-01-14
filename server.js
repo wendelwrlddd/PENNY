@@ -267,6 +267,127 @@ app.get('/api/baileys/qr-image', async (req, res) => {
   }
 });
 
+// 🆕 Evolution QR Code Page
+app.get('/evolution/qr', async (req, res) => {
+  const axios = require('axios');
+  const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'https://penny-evolution-api.fly.dev';
+  const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'PENNY_SECURE_KEY_2024';
+  
+  try {
+    const response = await axios.get(`${EVOLUTION_API_URL}/instance/connect/penny`, {
+      headers: { 'apikey': EVOLUTION_API_KEY }
+    });
+    
+    const qrData = response.data;
+    const qrCode = qrData.qrcode?.code || qrData.code;
+    const status = qrData.instance?.state || qrData.state || 'unknown';
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Evolution API - QR Code</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+          }
+          .container {
+            background: white;
+            border-radius: 24px;
+            padding: 48px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+          }
+          h1 { color: #1a202c; margin-bottom: 12px; font-size: 32px; }
+          .status {
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            margin: 20px 0;
+            display: inline-block;
+          }
+          .status.open { background: #d1fae5; color: #065f46; }
+          .status.connecting { background: #fef3c7; color: #92400e; }
+          .status.close { background: #fee2e2; color: #991b1b; }
+          #qrcode { margin: 30px 0; padding: 20px; background: #f7fafc; border-radius: 16px; }
+          #qrcode img { max-width: 100%; border-radius: 12px; }
+          .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+            font-size: 14px;
+          }
+          .refresh-btn:hover { background: #5568d3; transform: translateY(-2px); }
+          .instructions {
+            background: #edf2f7;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 24px;
+            text-align: left;
+            font-size: 14px;
+          }
+          .instructions ol { margin-left: 20px; line-height: 1.8; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>📱 Penny - WhatsApp Connection</h1>
+          <div class="status ${status}">${status.toUpperCase()}</div>
+          <div id="qrcode">
+            ${qrCode ? `<img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qrCode)}" alt="QR Code" />` : '<p>⏳ Aguardando QR Code...</p>'}
+          </div>
+          ${status === 'open' ? 
+            '<p style="color: #065f46; font-weight: 600;">✅ WhatsApp Conectado com Sucesso!</p>' : 
+            `<div class="instructions">
+              <h3>📋 Como Conectar:</h3>
+              <ol>
+                <li>Abra o <strong>WhatsApp</strong> no seu celular</li>
+                <li>Toque em <strong>Configurações</strong> > <strong>Aparelhos conectados</strong></li>
+                <li>Toque em <strong>Conectar um aparelho</strong></li>
+                <li>Aponte a câmera para o QR Code acima</li>
+              </ol>
+            </div>`
+          }
+          <button class="refresh-btn" onclick="location.reload()">🔄 Atualizar</button>
+        </div>
+        <script>
+          ${status !== 'open' ? 'setTimeout(() => location.reload(), 5000);' : ''}
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Erro - Evolution API</title></head>
+      <body style="font-family: sans-serif; padding: 40px; background: #fee2e2;">
+        <h1 style="color: #991b1b;">❌ Erro ao conectar Evolution API</h1>
+        <pre style="background: white; padding: 20px; border-radius: 8px; overflow: auto;">${error.message}</pre>
+        <pre style="background: white; padding: 20px; border-radius: 8px; overflow: auto;">${JSON.stringify(error.response?.data, null, 2)}</pre>
+        <button onclick="location.reload()" style="margin-top: 20px; padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">🔄 Tentar Novamente</button>
+      </body>
+      </html>
+    `);
+  }
+});
+
 /**
  * Passo 1: Atualizar o Modelo de Usuário (Firestore)
  * Garante que o usuário possua um accessToken seguro.
@@ -1684,10 +1805,24 @@ server.listen(PORT, '0.0.0.0', async () => { // Changed to async
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
   console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? `✅ Set (${process.env.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ Missing'}`);
   
-  // 🆕 Inicializar Baileys (WhatsApp direto)
+  
+  // 🆕 MIGRATED TO EVOLUTION API
+  // Baileys has been replaced with Evolution API for better stability
+  // To connect WhatsApp:
+  // 1. Run: docker-compose up -d
+  // 2. Access: http://localhost:8081/manager
+  // 3. Create instance named "penny"
+  // 4. Scan QR code
+  // 5. Configure webhook to: http://localhost:8080/webhooks/evolution
+  
+  console.log('📱 WhatsApp via Evolution API');
+  console.log('🔗 Evolution Manager: http://localhost:8081/manager');
+  console.log('🔑 API Key: PENNY_SECURE_KEY_2024');
+  console.log('📡 Webhook endpoint ready at: /webhooks/evolution');
+  
+  /* BAILEYS CODE - DISABLED
   console.log('📱 Iniciando conexão com WhatsApp via Baileys...');
   try {
-    // --- RESET CHECK (ON STARTUP) ---
     const fs = require('fs');
     const lockPath = path.join(__dirname, 'reset_session.lock');
     const sessionPath = path.join(__dirname, 'auth_info_baileys');
@@ -1698,38 +1833,28 @@ server.listen(PORT, '0.0.0.0', async () => { // Changed to async
             fs.rmSync(sessionPath, { recursive: true, force: true });
             console.log('🗑️ Legacy session deleted.');
         }
-        try { fs.unlinkSync(lockPath); } catch (e) {} // Remove flag
+        try { fs.unlinkSync(lockPath); } catch (e) {}
         console.log('✨ Clean start initiated.');
     }
-    // --------------------------------
 
     await connectWhatsApp(async (from, text, msg) => {
       console.log(`📩 [Baileys] Mensagem crua de ${from}: ${text}`);
-
-      // 🔒 VERIFICAÇÃO DE IDENTIDADE (LID <-> PHONE)
-      // Se não verificado, o handler cuida da interação e retorna null
       const verifiedPhone = await handleIdentityVerification(db, from, text);
       
       if (!verifiedPhone) {
           console.log(`🔒 [Security] Usuário ${from} em fluxo de verificação ou bloqueado.`);
-          return; // Não processa a mensagem como comando/bot
+          return;
       }
 
       console.log(`🔓 [Security] Usuário verificado: ${from} -> ${verifiedPhone}`);
-      
-      // ✅ USUÁRIO VERIFICADO!
-      // Processa a mensagem usando:
-      // - text: Texto da mensagem
-      // - sender: 'from' (LID original, para responder corretamente)
-      // - instance: 'baileys'
-      // - source: 'whatsapp-baileys'
-      // - dbUserId: verifiedPhone (ID real do banco de dados)
       await processMessageBackground(text, from, 'baileys', 'whatsapp-baileys', verifiedPhone);
     });
     console.log('✅ Baileys inicializado com sucesso!');
   } catch (error) {
     console.error('❌ Erro ao inicializar Baileys:', error.message);
   }
+  */
+  
   
   // Migration for UK users
   runMigration();
