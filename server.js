@@ -216,41 +216,29 @@ app.post('/api/baileys/disconnect', async (req, res) => {
   }
 });
 
-// 🆕 RESET SESSION (Fix Loop Check)
+// 🆕 RESET SESSION (Flag & Kill)
 app.post('/api/baileys/reset', async (req, res) => {
   const fs = require('fs');
-  const sessionDir = path.join(__dirname, 'auth_info_baileys');
-
-  console.log('☢️ RESETTING WHATSAPP SESSION...');
-
+  const path = require('path');
+  
+  console.log('☢️ MARKING SESSION FOR RESET & RESTARTING...');
+  
   try {
-    // 1. Disconnect (Try best effort)
-    try {
-        await disconnectWhatsApp();
-    } catch (e) {
-        console.warn("Disconnect failed (expected if zombie):", e.message);
-    }
+    // Determine path for lock file
+    const lockFile = path.join(__dirname, 'reset_session.lock');
+    fs.writeFileSync(lockFile, 'true');
+    
+    // Respond first so client knows it worked
+    res.json({ success: true, message: 'Server restarting to clear session... Update in 10s.' });
+    
+    // Give time for response to flush
+    setTimeout(() => {
+        console.log('💀 Kill switch engaged.');
+        process.exit(0); // Fly.io will restart the process automatically
+    }, 1000);
 
-    // 2. Delete Credentials FORCEFULLY
-    if (fs.existsSync(sessionDir)) {
-      fs.rmSync(sessionDir, { recursive: true, force: true });
-      console.log('🗑️ Session folder deleted.');
-    } else {
-        console.log('🗑️ Session folder not found (already clean).');
-    }
-
-    // 3. Restart
-    await connectWhatsApp(async (from, text, msg) => {
-       // Re-attach the same handler logic as in the main server start
-       console.log(`📩 [Baileys] Mensagem crua de ${from}: ${text}`);
-       const verifiedPhone = await handleIdentityVerification(db, from, text);
-       if (!verifiedPhone) return;
-       await processMessageBackground(text, from, 'baileys', 'whatsapp-baileys', verifiedPhone);
-    });
-
-    res.json({ success: true, message: 'Session reset. New QR Code generating...' });
   } catch (error) {
-    console.error('Reset Error:', error);
+    console.error('Reset Flag Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1699,6 +1687,22 @@ server.listen(PORT, '0.0.0.0', async () => { // Changed to async
   // 🆕 Inicializar Baileys (WhatsApp direto)
   console.log('📱 Iniciando conexão com WhatsApp via Baileys...');
   try {
+    // --- RESET CHECK (ON STARTUP) ---
+    const fs = require('fs');
+    const lockPath = path.join(__dirname, 'reset_session.lock');
+    const sessionPath = path.join(__dirname, 'auth_info_baileys');
+
+    if (fs.existsSync(lockPath)) {
+        console.log('🧼 FOUND RESET FLAG! Cleaning session...');
+        if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            console.log('🗑️ Legacy session deleted.');
+        }
+        try { fs.unlinkSync(lockPath); } catch (e) {} // Remove flag
+        console.log('✨ Clean start initiated.');
+    }
+    // --------------------------------
+
     await connectWhatsApp(async (from, text, msg) => {
       console.log(`📩 [Baileys] Mensagem crua de ${from}: ${text}`);
 
