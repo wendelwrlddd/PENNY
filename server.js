@@ -224,13 +224,19 @@ app.post('/api/baileys/reset', async (req, res) => {
   console.log('☢️ RESETTING WHATSAPP SESSION...');
 
   try {
-    // 1. Disconnect
-    await disconnectWhatsApp();
+    // 1. Disconnect (Try best effort)
+    try {
+        await disconnectWhatsApp();
+    } catch (e) {
+        console.warn("Disconnect failed (expected if zombie):", e.message);
+    }
 
-    // 2. Delete Credentials
+    // 2. Delete Credentials FORCEFULLY
     if (fs.existsSync(sessionDir)) {
       fs.rmSync(sessionDir, { recursive: true, force: true });
       console.log('🗑️ Session folder deleted.');
+    } else {
+        console.log('🗑️ Session folder not found (already clean).');
     }
 
     // 3. Restart
