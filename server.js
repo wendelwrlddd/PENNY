@@ -1792,8 +1792,8 @@ app.use('/original-quiz', express.static(path.join(__dirname, 'quiz')));
 
 // Fallback para servir o index.html (Catch-all middleware)
 app.use((req, res, next) => {
-  // Ignorar rotas de API, Auth e arquivos estáticos
-  if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.includes('.')) {
+  // Ignorar rotas de API, Auth, Evolution e arquivos estáticos
+  if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/evolution') || req.path.startsWith('/baileys') || req.path.includes('.')) {
     return next();
   }
   res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
