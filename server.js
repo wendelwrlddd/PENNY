@@ -216,6 +216,39 @@ app.post('/api/baileys/disconnect', async (req, res) => {
   }
 });
 
+// 🆕 RESET SESSION (Fix Loop Check)
+app.post('/api/baileys/reset', async (req, res) => {
+  const fs = require('fs');
+  const sessionDir = path.join(__dirname, 'auth_info_baileys');
+
+  console.log('☢️ RESETTING WHATSAPP SESSION...');
+
+  try {
+    // 1. Disconnect
+    await disconnectWhatsApp();
+
+    // 2. Delete Credentials
+    if (fs.existsSync(sessionDir)) {
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+      console.log('🗑️ Session folder deleted.');
+    }
+
+    // 3. Restart
+    await connectWhatsApp(async (from, text, msg) => {
+       // Re-attach the same handler logic as in the main server start
+       console.log(`📩 [Baileys] Mensagem crua de ${from}: ${text}`);
+       const verifiedPhone = await handleIdentityVerification(db, from, text);
+       if (!verifiedPhone) return;
+       await processMessageBackground(text, from, 'baileys', 'whatsapp-baileys', verifiedPhone);
+    });
+
+    res.json({ success: true, message: 'Session reset. New QR Code generating...' });
+  } catch (error) {
+    console.error('Reset Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Generate QR Code image
 app.get('/api/baileys/qr-image', async (req, res) => {
   const QRCode = require('qrcode');

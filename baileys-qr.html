@@ -152,6 +152,7 @@
     </div>
 
     <button class="refresh-btn" onclick="checkQR()">🔄 Atualizar</button>
+    <button class="refresh-btn" style="background-color: #e53e3e; margin-left: 10px;" onclick="resetSession()">☢️ Resetar Sessão</button>
 
     <div class="instructions">
       <h3>📋 Como Conectar:</h3>
@@ -195,6 +196,22 @@
         console.error('Erro:', error);
         document.getElementById('status').className = 'status error';
         document.getElementById('status').textContent = '❌ Erro ao conectar com servidor';
+      }
+    }
+
+    async function resetSession() {
+      if (!confirm('Isso vai desconectar o WhatsApp e apagar a sessão atual para gerar um novo QR Code. Continuar?')) return;
+      
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = '☢️ Resetando sessão... aguarde...';
+      
+      try {
+        const response = await fetch('/api/baileys/reset', { method: 'POST' });
+        const data = await response.json();
+        alert(data.message || 'Sessão resetada!');
+        location.reload();
+      } catch (error) {
+        alert('Erro ao resetar: ' + error.message);
       }
     }
 
