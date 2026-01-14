@@ -18,8 +18,10 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import { Server } from 'socket.io';
 
-// Baileys removed
-// import { handleIdentityVerification } from './lib/verification.js';
+
+// WhatsApp routes (Evolution API)
+import whatsappRoutes from './routes/whatsapp.js';
+
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -80,6 +82,10 @@ app.use(cookieParser());
 app.use('/webhook', express.text({ type: 'application/json' }));
 
 app.use(express.json());
+
+// WhatsApp API routes
+app.use('/api/whatsapp', whatsappRoutes);
+
 
 // --- SERVE REACT STATIC FILES ---
 app.use(express.static(path.join(__dirname, 'client/dist')));
