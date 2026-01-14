@@ -11,23 +11,15 @@ import { v4 as uuidv4 } from 'uuid';
 import authMiddleware from './authMiddleware.js';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
-import { sendMessage, logoutInstance, deleteInstance, sendPresence } from './lib/evolution.js';
+// Evolution removed
 import { generateSubscriptionLink } from './services/paypalService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
 import { Server } from 'socket.io';
 
-// 🆕 BAILEYS - WhatsApp direto (substitui Evolution API)
-import { 
-  connectWhatsApp, 
-  sendTextMessage as baileysendTextMessage,
-  sendPresence as baileysSendPresence,
-  getQRCode,
-  getConnectionStatus,
-  disconnectWhatsApp 
-} from './lib/baileys.js';
-import { handleIdentityVerification } from './lib/verification.js';
+// Baileys removed
+// import { handleIdentityVerification } from './lib/verification.js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
