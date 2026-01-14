@@ -1806,54 +1806,9 @@ server.listen(PORT, '0.0.0.0', async () => { // Changed to async
   console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? `✅ Set (${process.env.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ Missing'}`);
   
   
-  // 🆕 MIGRATED TO EVOLUTION API
-  // Baileys has been replaced with Evolution API for better stability
-  // To connect WhatsApp:
-  // 1. Run: docker-compose up -d
-  // 2. Access: http://localhost:8081/manager
-  // 3. Create instance named "penny"
-  // 4. Scan QR code
-  // 5. Configure webhook to: http://localhost:8080/webhooks/evolution
+  // WhatsApp integration disabled
+  console.log('📱 WhatsApp: Desabilitado');
   
-  console.log('📱 WhatsApp via Evolution API');
-  console.log('🔗 Evolution Manager: http://localhost:8081/manager');
-  console.log('🔑 API Key: PENNY_SECURE_KEY_2024');
-  console.log('📡 Webhook endpoint ready at: /webhooks/evolution');
-  
-  /* BAILEYS CODE - DISABLED
-  console.log('📱 Iniciando conexão com WhatsApp via Baileys...');
-  try {
-    const fs = require('fs');
-    const lockPath = path.join(__dirname, 'reset_session.lock');
-    const sessionPath = path.join(__dirname, 'auth_info_baileys');
-
-    if (fs.existsSync(lockPath)) {
-        console.log('🧼 FOUND RESET FLAG! Cleaning session...');
-        if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log('🗑️ Legacy session deleted.');
-        }
-        try { fs.unlinkSync(lockPath); } catch (e) {}
-        console.log('✨ Clean start initiated.');
-    }
-
-    await connectWhatsApp(async (from, text, msg) => {
-      console.log(`📩 [Baileys] Mensagem crua de ${from}: ${text}`);
-      const verifiedPhone = await handleIdentityVerification(db, from, text);
-      
-      if (!verifiedPhone) {
-          console.log(`🔒 [Security] Usuário ${from} em fluxo de verificação ou bloqueado.`);
-          return;
-      }
-
-      console.log(`🔓 [Security] Usuário verificado: ${from} -> ${verifiedPhone}`);
-      await processMessageBackground(text, from, 'baileys', 'whatsapp-baileys', verifiedPhone);
-    });
-    console.log('✅ Baileys inicializado com sucesso!');
-  } catch (error) {
-    console.error('❌ Erro ao inicializar Baileys:', error.message);
-  }
-  */
   
   
   // Migration for UK users
