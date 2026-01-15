@@ -1,7 +1,6 @@
 import express from 'express';
 import {
   connectInstance,
-  getQrCode,
   getStatus
 } from '../lib/evolutionClient.js';
 
