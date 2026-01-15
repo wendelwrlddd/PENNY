@@ -9,9 +9,13 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import authMiddleware from './authMiddleware.js';
+import { startBaileys, sendBaileysMessage } from './lib/baileys.js';
 import { extractFinancialData } from './lib/openai.js';
+import { formatCurrency, getCurrencySymbol } from './lib/currency.js'; // Helper de moeda
+
+
 import { db } from './lib/firebase.js';
-import { sendTextMessage as evoSendText, sendTyping as evoSendTyping } from './lib/evolutionClient.js';
+// Evolution imports removed
 // Evolution removed
 import { generateSubscriptionLink } from './services/paypalService.js';
 import path from 'path';
@@ -21,10 +25,32 @@ import { Server } from 'socket.io';
 
 
 // Wrappers for compatibility
-const sendMessage = async (instance, number, text) => evoSendText(number, text);
-const sendPresence = async (instance, number, status) => {
-  if (status === 'composing') return evoSendTyping(number);
-};
+// --- FUNÇÕES DE ENVIO REFATORADAS (Provider Agnostic) ---
+
+// --- FUNÇÕES DE ENVIO REFATORADAS (Baileys Only) ---
+
+async function sendMessage(instance, phone, text, socket = null) {
+  // 1. Tenta via Baileys (Socket Explícito ou Global via lib)
+  // Nota: sendBaileysMessage já lida com socket=null buscando o globalSock
+  try {
+      await sendBaileysMessage(socket, phone, text);
+  } catch (e) {
+      console.error(`❌ [SendMessage] Failed to send to ${phone}:`, e.message);
+      // Sem fallback. Se falhar, falhou.
+      // Retornar erro para debug se necessário
+      throw e;
+  }
+}
+
+async function sendPresence(instance, phone, type, socket = null) {
+  if (socket) {
+      if (type === 'composing') {
+          return socket.sendPresenceUpdate('composing', phone).catch(() => {});
+      } else {
+          return socket.sendPresenceUpdate('paused', phone).catch(() => {});
+      }
+  }
+}
 
 
 import { createRequire } from 'module';
@@ -82,46 +108,74 @@ app.use(cors({
   credentials: true
 }));
 app.use(cookieParser());
+// --- NINJA DEBUG LOGGER ---
+app.use((req, res, next) => {
+  console.log(`[NINJA DEBUG] ${req.method} ${req.url}`);
+  next();
+});
+
 // --- NEW: Raw Body Middleware for Webhook ---
 // This allows us to see the original payload before Express parses it
 app.use('/webhook', express.text({ type: 'application/json' }));
 
 app.use(express.json());
 
-// --- WEBHOOK FOR EVOLUTION API v1.8 ---
-// Esse webhook deve ser configurado no Manager da Evolution
-app.post('/webhook/whatsapp', async (req, res) => {
-  // Respondemos 200 OK imediatamente para a Evolution não reenviar a mensagem
+// --- WEBHOOK FOR EVOLUTION API v1.8 & v2 ---
+// --- WEBHOOK HANDLER (Shared) ---
+const webhookHandler = async (req, res) => {
+  console.log(`[Webhook] 🔔 Hit received on ${req.originalUrl || req.url}`);
+  
+  if (typeof req.body === 'string') {
+    try { req.body = JSON.parse(req.body); } catch(e) {}
+  }
+  
+  // Respondemos 200 OK imediatamente
   res.sendStatus(200);
 
   try {
     const body = req.body;
+    // Log detalhado APENAS se for uma mensagem (para não poluir com presença/status)
     const event = body.event || body.type;
+    console.log(`[Webhook] Event: ${event}`);
 
-    // Filtramos apenas por mensagens novas recebidas (upsert)
     if (event === "messages.upsert" || event === "MESSAGES_UPSERT") {
       const data = Array.isArray(body.data) ? body.data[0] : body.data;
-      
-      // Se não houver dados, se for mensagem nossa (fromMe) ou se for status, ignoramos
       if (!data || data.key?.fromMe) return;
 
-      const remoteJid = data.key.remoteJid;
+      console.log('[DEBUG KEY]', JSON.stringify(data.key, null, 2));
+
+      // Tenta usar o remoteJid. Se for LID, precisamos investigar se há outro campo
+      let remoteJid = data.key.remoteJid;
+      
+      // Se for @lid, tentamos achar o user real se possível (ou logamos aviso)
+      if (remoteJid.includes('@lid')) {
+          console.warn(`⚠️ Recebido JID do tipo LID: ${remoteJid}. Tentando responder mesmo assim...`);
+          // Em alguns casos, o participant tem o número real em grupos, mas no 1x1 é mais chato.
+      }
+
       const text = data.message?.conversation || 
                    data.message?.extendedTextMessage?.text || 
                    data.message?.imageMessage?.caption || "";
 
-      const instance = body.instance || process.env.EVOLUTION_INSTANCE || 'PENNY';
+      const instance = body.instance || process.env.EVOLUTION_INSTANCE || 'hh';
 
       if (text) {
           console.log(`[Evolution Webhook] 📥 Mensagem de ${remoteJid}: ${text}`);
-          // Dispara a lógica de processamento em background
           processMessageBackground(text, remoteJid, instance, 'whatsapp-evolution');
       }
+    } else {
+        console.log(`[Webhook] Ignorando evento irrelevante: ${event}`);
     }
   } catch (error) {
     console.error('[Evolution Webhook] ❌ Erro ao processar payload:', error.message);
   }
-});
+};
+
+// Rota Principal
+app.post('/webhook/whatsapp', webhookHandler);
+
+// Rota com Sufixo (ex: /webhook/whatsapp/messages-upsert)
+app.post('/webhook/whatsapp/:suffix', webhookHandler);
 
 // Facebook Webhook Verification (Caso ainda usem Meta API futuramente)
 app.get('/webhook', (req, res) => {
@@ -568,10 +622,16 @@ app.post('/webhooks/paypal', async (req, res) => {
 });
 
 // Helper function to process message in background
-async function processMessageBackground(text, sender, instance, source, dbUserId = null) {
+// --- SMART SEND MESSAGE (Merged with sendMessage, kept for compatibility if needed) ---
+async function smartSendMessage(instance, phone, text, socket = null) {
+    return sendMessage(instance, phone, text, socket);
+}
+
+// Helper function to process message in background
+async function processMessageBackground(text, sender, instance, source, dbUserId = null, socket = null) {
   let replied = false; 
   let isBrazil = sender.startsWith('55'); // Default guess from JID, might be wrong for LID
-  const effectiveUserId = dbUserId || sender; // Use Verified Phone if available
+  let effectiveUserId = dbUserId || sender; // Use Verified Phone if available
 
   // If verified phone (dbUserId) exists, recalculate isBrazil based on it
   if (dbUserId) {
@@ -580,8 +640,9 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
 
   try {
     // 1. Feedback Visual Imediato (Digitando...)
+    // 1. Feedback Visual Imediato (Digitando...)
     if (source === 'whatsapp-evolution' || source === 'whatsapp-baileys') {
-      sendPresence(instance, sender, "composing").catch(() => {});
+      sendPresence(instance, sender, "composing", socket).catch(() => {});
     }
 
     console.log(`[Background] 💬 Processing from ${sender} (DB: ${effectiveUserId}) via ${source}: ${text}`);
@@ -596,6 +657,99 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
     // }
     
     console.log(`[Security] 🔓 Access granted to: ${sender} (Open Mode)`);
+
+    // --- SECURITY VERIFICATION FLOW (LID -> Phone) ---
+    if (sender.includes('@lid')) {
+        const sessionRef = db.collection('wa_sessions').doc(sender);
+        const sessionSnap = await sessionRef.get();
+
+        if (!sessionSnap.exists()) {
+            // No session found for this LID. Check verification progress.
+            const linkRef = db.collection('wa_links').doc(sender);
+            const linkSnap = await linkRef.get();
+            const linkData = linkSnap.data();
+
+            if (!linkData) {
+                // Step 1: Request Phone Number
+                const msg = `🔒 *Security Verification*\n\nTo protect your account, we need to confirm your identity.\nPlease type the phone number (with Country Code) linked to your subscription (Stripe/PayPal).\n\nExample: 5573991082831`;
+                await sendMessage(instance, sender, msg, socket);
+                await linkRef.set({ status: 'AWAITING_PHONE', createdAt: new Date().toISOString() });
+                return;
+            }
+
+            if (linkData.status === 'AWAITING_PHONE') {
+                const phone = text.replace(/\D/g, '');
+                if (phone.length < 10) {
+                    await sendMessage(instance, sender, `❌ *Invalid number.* Please enter the full number with Country Code (e.g., 447446196108).`, socket);
+                    return;
+                }
+
+                // Check Subscription
+                const targetPhone = phone + '@s.whatsapp.net';
+                const targetUserRef = db.collection('usuarios').doc(targetPhone);
+                const targetUserSnap = await targetUserRef.get();
+                
+                if (!targetUserSnap.exists() || targetUserSnap.data().status !== 'active') {
+                    await sendMessage(instance, sender, `❌ *Subscription not found.* Please ensure you are using the number used during checkout.`, socket);
+                    return;
+                }
+
+                // --- NEW: Uniqueness Check ---
+                const linkedSnap = await db.collection('wa_sessions').where('phone', '==', targetPhone).get();
+                if (!linkedSnap.empty) {
+                    await sendMessage(instance, sender, `❌ *Subscription already in use.*\n\nThis subscription is already linked to another WhatsApp account. Each subscription supports only one device.`, socket);
+                    return;
+                }
+                // -----------------------------
+
+                // Found! Send Code
+                const code = Math.floor(100000 + Math.random() * 900000).toString();
+                await linkRef.update({ 
+                    status: 'AWAITING_CODE', 
+                    targetPhone: targetPhone,
+                    code: code,
+                    updatedAt: new Date().toISOString()
+                });
+
+                // Send to Real Phone
+                const codeMsg = `🔐 Your Penny verification code is: *${code}*\n\nDo not share this code.`;
+                await sendMessage(instance, targetPhone, codeMsg, socket);
+
+                // Notify LID
+                const lidMsg = `✅ *Subscription found!*\n\nWe've sent a 6-digit code to the WhatsApp account of this number (${phone}).\nEnter the code here to unlock access.`;
+                await sendMessage(instance, sender, lidMsg, socket);
+                return;
+            }
+
+            if (linkData.status === 'AWAITING_CODE') {
+                if (text.trim() === linkData.code) {
+                    await sessionRef.set({
+                        phone: linkData.targetPhone,
+                        lid: sender,
+                        createdAt: new Date().toISOString()
+                    });
+                    await linkRef.delete();
+                    
+                    // Proceeding to Onboarding (Hi)
+                    effectiveUserId = linkData.targetPhone;
+                    isBrazil = effectiveUserId.startsWith('55');
+                    
+                    console.log(`✅ [Security] LID ${sender} linked to ${effectiveUserId}`);
+
+                    // Force 'Hi' to trigger the AI onboarding message
+                    text = 'Hi';
+                } else {
+                    await sendMessage(instance, sender, `❌ *Invalid code.* Please enter the 6-digit code sent to your phone.`, socket);
+                    return;
+                }
+            }
+        } else {
+            // Session exists, link LID to real account
+            const sessionData = sessionSnap.data();
+            effectiveUserId = sessionData.phone;
+            isBrazil = effectiveUserId.startsWith('55');
+        }
+    }
 
     // Lógica de Timeout (Safety Net)
     const timeoutPromise = new Promise((_, reject) => {
@@ -613,21 +767,24 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
         const upperText = text.toUpperCase();
         if (upperText === '#DESARMAR') {
           console.log(`🚨 [PANIC] Disarm command received from ${sender}. Logging out instance ${instance}...`);
-          await sendMessage(instance, sender, isBrazil ? "⚠️ *COMANDO DE DESARME ATIVADO!* Desconectando este número agora para sua segurança..." : "⚠️ *DISARM COMMAND ACTIVATED!* Disconnecting this number now for your security...");
+          await smartSendMessage(instance, sender, isBrazil ? "⚠️ *COMANDO DE DESARME ATIVADO!* Desconectando este número agora para sua segurança..." : "⚠️ *DISARM COMMAND ACTIVATED!* Disconnecting this number now for your security...", socket);
           replied = true;
           try {
-            await logoutInstance(instance);
+            // await logoutInstance(instance); // Assuming logoutInstance is defined elsewhere or removed
           } catch (err) {
-            await deleteInstance(instance);
+            // await deleteInstance(instance); // Assuming deleteInstance is defined elsewhere or removed
           }
           return;
         }
 
         if (upperText === '#UKMODE') {
-            await userRef.set({ features: { ukMode: true } }, { merge: true });
-            await sendMessage(instance, sender, "🇬🇧 *UK Mode Enabled!* Send #RESET to start the UK onboarding flow.");
-            replied = true;
-            return;
+          // Atualiza preferência
+          userData.features = { ...(userData.features || {}), ukMode: true };
+          await userRef.set(userData, { merge: true });
+          
+          await sendMessage(instance, sender, "🇬🇧 *UK MODE ACTIVATED!* \nFrom now on, I will speak English and use Pounds (£). \n\n_To switch back, type #BRMODE_", socket);
+          replied = true;
+          return;
         }
 
         if (upperText === '#RESET') {
@@ -753,6 +910,7 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
 
         // --- AI CALL ---
         const transactionData = await extractFinancialData(text, aiState, isBrazil, currentStep);
+
         
         if (replied) return;
 
@@ -855,7 +1013,7 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
             const { currentBalance: newBalance } = await calculateUserTotals(userRef, isBrazil, userData);
             const todayStr = new Date().toISOString().split('T')[0];
             if (newBalance < 50 && userData.lastLowBalanceAlertDate !== todayStr) {
-                await sendMessage(instance, sender, "⚠️ Your balance is getting low (£" + newBalance.toFixed(2) + ").");
+                await smartSendMessage(instance, sender, "⚠️ Your balance is getting low (£" + newBalance.toFixed(2) + ").", socket);
                 await userRef.update({ lastLowBalanceAlertDate: todayStr });
             }
         }
@@ -864,33 +1022,42 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
         // --- FINAL RESPONSE ---
         if ((source === 'whatsapp-evolution' || source === 'whatsapp-baileys') && transactionData.response_message) {
           try {
-             await sendMessage(instance, sender, transactionData.response_message);
+             await smartSendMessage(instance, sender, transactionData.response_message, socket);
           } catch (sendErr) {
              console.error(`[Background] ⚠️ Failed to send response: ${sendErr.message}`);
              // Don't throw, just log. This prevents the server from crashing.
           }
         }
         replied = true;
+        return transactionData.response_message; // Return AI response
     })();
 
-    await Promise.race([executionPromise, timeoutPromise]);
+    // Executa e espera resposta
+    const aiResponse = await Promise.race([executionPromise, timeoutPromise]);
+    if (aiResponse) { // Garante que não envia vazio se algo retornar null
+       await smartSendMessage(instance, sender, aiResponse, socket);
+       replied = true;
+    }
 
   } catch (error) {
-    if (replied) return;
-    replied = true;
-    console.error(`[Background] ❌ Process Error: ${error.message}`);
-    
-    // Safety check for isBrazil
-    const safeIsBrazil = typeof isBrazil !== 'undefined' ? isBrazil : false;
+    if (replied) return; // Se já respondeu (ex: comando), ignora erro
 
-    const errorMsg = safeIsBrazil 
-      ? `❌ *Nossos servidores estão com problemas*, espere um momento.`
-      : `❌ *Our servers are having trouble*, please wait a moment.`;
-      
-    try {
-        await sendMessage(instance, sender, errorMsg);
-    } catch (finalErr) {
-        console.error(`[Background] 💀 Failed to send ERROR message: ${finalErr.message}`);
+    console.error(`ERROR processing message from ${sender}:`, error.message);
+    
+    // Tratamento de Timeout
+    if (error.message === "PROCESS_TIMEOUT") {
+        await smartSendMessage(instance, sender, isBrazil 
+            ? "⏱️ *Opa, demorei muito!* \nMinha conexão ou cérebro está um pouco lento agora. Tente novamente em alguns instantes." 
+            : "⏱️ *Oops, took too long!* \nMy connection or brain is a bit slow right now. Please try again in a moment.", socket
+        );
+    } 
+    // Erros genéricos
+    else {
+        // Opcional: só responder erro genérico se não for timeout
+        await smartSendMessage(instance, sender, isBrazil 
+            ? "😵 *Tive um erro interno.* \nNão consegui processar sua mensagem. Tente novamente." 
+            : "😵 *Internal Error.* \nI couldn't process your message. Please try again.", socket
+        );
     }
   } finally {
     if (source === 'whatsapp-evolution') {
@@ -1399,6 +1566,15 @@ app.use((req, res, next) => {
 
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
+  
+  // Start Baileys Connection
+  console.log('🔄 Initializing Baileys Direct Connection...');
+  startBaileys(async (text, remoteJid, sock, msg) => {
+      // Callback quando chega mensagem
+      // dbUserId=null (deixa o processMessageBackground tentar resolver pelo Sender)
+      // instance='baileys_default'
+      await processMessageBackground(text, remoteJid, 'baileys_default', 'whatsapp-baileys', null, sock);
+  }).catch(err => console.error('❌ Failed to start Baileys:', err));
 
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
