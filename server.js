@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import authMiddleware from './authMiddleware.js';
 import { extractFinancialData } from './lib/openai.js';
 import { db } from './lib/firebase.js';
+import { sendTextMessage as evoSendText, sendTyping as evoSendTyping } from './lib/evolutionClient.js';
 // Evolution removed
 import { generateSubscriptionLink } from './services/paypalService.js';
 import path from 'path';
@@ -19,25 +20,11 @@ import http from 'http';
 import { Server } from 'socket.io';
 
 
-// WhatsApp routes (Evolution API)
-// WhatsApp routes
-import whatsappRoutes from './routes/whatsapp.js';
-import { startBaileys, sendMessage as sendBaileysMsg, sendPresence as sendBaileysPres } from './lib/baileys.js';
-
 // Wrappers for compatibility
-const sendMessage = async (instance, number, text) => sendBaileysMsg(number, text);
-const sendPresence = async (instance, number, status) => sendBaileysPres(number, status);
-
-// Baileys Handler Adptator
-async function handleBaileysMessage(msg) {
-  const sender = msg.key.remoteJid;
-  const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
-  
-  if (!text) return;
-
-  console.log(`[Baileys] Msg from ${sender}: ${text}`);
-  await processMessageBackground(text, sender, 'baileys', 'whatsapp-baileys');
-}
+const sendMessage = async (instance, number, text) => evoSendText(number, text);
+const sendPresence = async (instance, number, status) => {
+  if (status === 'composing') return evoSendTyping(number);
+};
 
 
 import { createRequire } from 'module';
@@ -101,311 +88,59 @@ app.use('/webhook', express.text({ type: 'application/json' }));
 
 app.use(express.json());
 
-// WhatsApp API routes
-// WhatsApp API routes
-app.use('/api/whatsapp', whatsappRoutes);
+// --- WEBHOOK FOR EVOLUTION API v1.8 ---
+// Esse webhook deve ser configurado no Manager da Evolution
+app.post('/webhook/whatsapp', async (req, res) => {
+  // Respondemos 200 OK imediatamente para a Evolution não reenviar a mensagem
+  res.sendStatus(200);
 
-// --- Baileys Webhook removed (Running in-process) ---
+  try {
+    const body = req.body;
+    const event = body.event || body.type;
 
+    // Filtramos apenas por mensagens novas recebidas (upsert)
+    if (event === "messages.upsert" || event === "MESSAGES_UPSERT") {
+      const data = Array.isArray(body.data) ? body.data[0] : body.data;
+      
+      // Se não houver dados, se for mensagem nossa (fromMe) ou se for status, ignoramos
+      if (!data || data.key?.fromMe) return;
 
-// --- SERVE REACT STATIC FILES ---
-app.use(express.static(path.join(__dirname, 'client/dist')));
+      const remoteJid = data.key.remoteJid;
+      const text = data.message?.conversation || 
+                   data.message?.extendedTextMessage?.text || 
+                   data.message?.imageMessage?.caption || "";
 
-// Logging middleware
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
+      const instance = body.instance || process.env.EVOLUTION_INSTANCE || 'PENNY';
 
-// Health check and root debug
-app.get('/', (req, res) => {
-  console.log('--- DEBUG: GET / received ---');
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-  res.status(200).send('Penny Finance API is OK');
-});
-
-// 🆕 Baileys QR Code Page (PROTECTED)
-app.get('/baileys', (req, res) => {
-  const auth = { login: 'LAVINIAMEUAMOR', password: 'AmIAc2c-o@n!' };
-
-  // Parse "Basic" auth header
-  const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
-  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
-
-  // Verify login and password
-  if (login && password && login === auth.login && password === auth.password) {
-    return res.sendFile(path.join(__dirname, 'baileys-qr.html'));
+      if (text) {
+          console.log(`[Evolution Webhook] 📥 Mensagem de ${remoteJid}: ${text}`);
+          // Dispara a lógica de processamento em background
+          processMessageBackground(text, remoteJid, instance, 'whatsapp-evolution');
+      }
+    }
+  } catch (error) {
+    console.error('[Evolution Webhook] ❌ Erro ao processar payload:', error.message);
   }
-
-  // Access denied...
-  res.set('WWW-Authenticate', 'Basic realm="401"');
-  res.status(401).send('Access restricted. Please log in.');
 });
 
-app.head('/', (req, res) => {
-  console.log('🚨 DEBUG: HEAD / recebido - Meta está acessando URL errada!');
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('Query:', JSON.stringify(req.query, null, 2));
-  res.sendStatus(200);
-});
-
-app.post('/', (req, res) => {
-  console.log('🚨 DEBUG: POST / recebido - Meta usando URL errada!');
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('Body:', JSON.stringify(req.body, null, 2));
-  res.sendStatus(200);
-});
-
-// Facebook Webhook Verification
+// Facebook Webhook Verification (Caso ainda usem Meta API futuramente)
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
-  if (mode && token) {
-    if (mode === 'subscribe' && token === 'penny123') {
-      console.log('✅ Webhook verified by Facebook!');
-      res.status(200).send(challenge);
-    } else {
-      console.error('❌ Verification token mismatch.');
-      res.sendStatus(403);
-    }
+  if (mode === 'subscribe' && token === 'penny123') {
+    res.status(200).send(challenge);
   } else {
-    res.sendStatus(400);
+    res.sendStatus(403);
   }
 });
 
-// 4. Disarm Endpoint (Security Kill Switch)
-app.post('/api/sys/disarm', async (req, res) => {
-  const { instance } = req.body;
-  const apiKey = req.headers['x-api-key'];
+// --- SERVE REACT STATIC FILES ---
+app.use(express.static(path.join(__dirname, 'client/dist')));
+app.use('/original-quiz', express.static(path.join(__dirname, 'quiz')));
 
-  if (apiKey !== process.env.EVOLUTION_API_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+// --- HELPER FUNCTIONS ---
 
-  if (!instance) {
-    return res.status(400).json({ error: 'Instance name required' });
-  }
-
-  try {
-    console.log(`🚨 [API PANIC] Disarm requested for instance: ${instance}`);
-    await logoutInstance(instance);
-    res.json({ success: true, message: `Instance ${instance} disconnected.` });
-  } catch (error) {
-    try {
-        await deleteInstance(instance);
-        res.json({ success: true, message: `Instance ${instance} deleted (logout failed).` });
-    } catch (err) {
-        res.status(500).json({ error: error.message });
-    }
-  }
-});
-
-// 🆕 BAILEYS ROUTES
-// Get QR Code for WhatsApp connection
-app.get('/api/baileys/qr', (req, res) => {
-  const qr = getQRCode();
-  const status = getConnectionStatus();
-  
-  if (status) {
-    return res.json({ connected: true, message: 'WhatsApp já conectado!' });
-  }
-  
-  if (!qr) {
-    return res.json({ connected: false, qr: null, message: 'Aguardando QR Code...' });
-  }
-  
-  res.json({ connected: false, qr, message: 'Escaneie o QR Code' });
-});
-
-// Get connection status
-app.get('/api/baileys/status', (req, res) => {
-  const status = getConnectionStatus();
-  res.json({ connected: status });
-});
-
-// Disconnect from WhatsApp
-app.post('/api/baileys/disconnect', async (req, res) => {
-  try {
-    await disconnectWhatsApp();
-    res.json({ success: true, message: 'Disconnected from WhatsApp' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 🆕 RESET SESSION (Flag & Kill)
-app.post('/api/baileys/reset', async (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
-  
-  console.log('☢️ MARKING SESSION FOR RESET & RESTARTING...');
-  
-  try {
-    // Determine path for lock file
-    const lockFile = path.join(__dirname, 'reset_session.lock');
-    fs.writeFileSync(lockFile, 'true');
-    
-    // Respond first so client knows it worked
-    res.json({ success: true, message: 'Server restarting to clear session... Update in 10s.' });
-    
-    // Give time for response to flush
-    setTimeout(() => {
-        console.log('💀 Kill switch engaged.');
-        process.exit(0); // Fly.io will restart the process automatically
-    }, 1000);
-
-  } catch (error) {
-    console.error('Reset Flag Error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Generate QR Code image
-app.get('/api/baileys/qr-image', async (req, res) => {
-  const QRCode = require('qrcode');
-  const qr = getQRCode();
-  
-  if (!qr) {
-    return res.status(404).send('QR Code não disponível');
-  }
-  
-  try {
-    const qrImage = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
-    const base64Data = qrImage.replace(/^data:image\/png;base64,/, '');
-    const img = Buffer.from(base64Data, 'base64');
-    
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': img.length
-    });
-    res.end(img);
-  } catch (error) {
-    res.status(500).send('Erro ao gerar QR Code');
-  }
-});
-
-// 🆕 Evolution QR Code Page
-app.get('/api/evolution/qr', async (req, res) => {
-  const axios = require('axios');
-  const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'https://penny-evolution-api.fly.dev';
-  const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'PENNY_SECURE_KEY_2024';
-  
-  try {
-    const response = await axios.get(`${EVOLUTION_API_URL}/instance/connect/penny`, {
-      headers: { 'apikey': EVOLUTION_API_KEY }
-    });
-    
-    const qrData = response.data;
-    const qrCode = qrData.qrcode?.code || qrData.code;
-    const status = qrData.instance?.state || qrData.state || 'unknown';
-    
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Evolution API - QR Code</title>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0;
-            padding: 20px;
-          }
-          .container {
-            background: white;
-            border-radius: 24px;
-            padding: 48px;
-            max-width: 600px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
-          }
-          h1 { color: #1a202c; margin-bottom: 12px; font-size: 32px; }
-          .status {
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-weight: 600;
-            margin: 20px 0;
-            display: inline-block;
-          }
-          .status.open { background: #d1fae5; color: #065f46; }
-          .status.connecting { background: #fef3c7; color: #92400e; }
-          .status.close { background: #fee2e2; color: #991b1b; }
-          #qrcode { margin: 30px 0; padding: 20px; background: #f7fafc; border-radius: 16px; }
-          #qrcode img { max-width: 100%; border-radius: 12px; }
-          .refresh-btn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 12px 32px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 16px;
-            font-size: 14px;
-          }
-          .refresh-btn:hover { background: #5568d3; transform: translateY(-2px); }
-          .instructions {
-            background: #edf2f7;
-            padding: 20px;
-            border-radius: 12px;
-            margin-top: 24px;
-            text-align: left;
-            font-size: 14px;
-          }
-          .instructions ol { margin-left: 20px; line-height: 1.8; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>📱 Penny - WhatsApp Connection</h1>
-          <div class="status ${status}">${status.toUpperCase()}</div>
-          <div id="qrcode">
-            ${qrCode ? `<img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qrCode)}" alt="QR Code" />` : '<p>⏳ Aguardando QR Code...</p>'}
-          </div>
-          ${status === 'open' ? 
-            '<p style="color: #065f46; font-weight: 600;">✅ WhatsApp Conectado com Sucesso!</p>' : 
-            `<div class="instructions">
-              <h3>📋 Como Conectar:</h3>
-              <ol>
-                <li>Abra o <strong>WhatsApp</strong> no seu celular</li>
-                <li>Toque em <strong>Configurações</strong> > <strong>Aparelhos conectados</strong></li>
-                <li>Toque em <strong>Conectar um aparelho</strong></li>
-                <li>Aponte a câmera para o QR Code acima</li>
-              </ol>
-            </div>`
-          }
-          <button class="refresh-btn" onclick="location.reload()">🔄 Atualizar</button>
-        </div>
-        <script>
-          ${status !== 'open' ? 'setTimeout(() => location.reload(), 5000);' : ''}
-        </script>
-      </body>
-      </html>
-    `);
-  } catch (error) {
-    res.status(500).send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Erro - Evolution API</title></head>
-      <body style="font-family: sans-serif; padding: 40px; background: #fee2e2;">
-        <h1 style="color: #991b1b;">❌ Erro ao conectar Evolution API</h1>
-        <pre style="background: white; padding: 20px; border-radius: 8px; overflow: auto;">${error.message}</pre>
-        <pre style="background: white; padding: 20px; border-radius: 8px; overflow: auto;">${JSON.stringify(error.response?.data, null, 2)}</pre>
-        <button onclick="location.reload()" style="margin-top: 20px; padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">🔄 Tentar Novamente</button>
-      </body>
-      </html>
-    `);
-  }
-});
 
 /**
  * Passo 1: Atualizar o Modelo de Usuário (Firestore)
@@ -1274,163 +1009,7 @@ app.post('/webhook', async (req, res) => {
     let body;
     
     // If we used express.text(), the body is a string
-    if (typeof req.body === 'string') {
-      try {
-        body = JSON.parse(req.body);
-      } catch (parseError) {
-        console.error('❌ JSON Parse Error:', parseError.message);
-        return; // Already sent 200
-      }
-    } else {
-      body = req.body;
-    }
-
-    // CASE 1: Meta Official API
-    if (body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
-      const message = body.entry[0].changes[0].value.messages[0];
-      const from = message.from;
-      
-      // 🔒 Whitelist check FIRST (Silent Ignore)
-      // 🔒 Whitelist check DISABLED -- OPEN TO ALL
-      // const isAllowedMeta = ALLOWED_NUMBERS.some(num => from.includes(num));
-      // if (!isAllowedMeta) {
-      //   console.log(`ℹ️ Meta: Ignorando mensagem de número não autorizado: ${from}`);
-      //   return;
-      // }
-
-      // --- GATEKEEPER (META) ---
-      if (message.type === 'audio' || message.type === 'voice') {
-        await sendMessage('OfficialMeta', from, "I haven't got ears yet 👂");
-        return;
-      }
-      if (message.type === 'image' || message.type === 'video' || message.type === 'sticker') {
-        await sendMessage('OfficialMeta', from, "I can't see photos yet 📷");
-        return;
-      }
-
-      if (message.type === 'text') {
-        const textBody = message.text.body || "";
-        if (textBody.length > 200) {
-          await sendMessage('OfficialMeta', from, "Your message is too long, mate. Please keep it short. 📉");
-          return;
-        }
-        processMessageBackground(textBody, from, 'OfficialMeta', 'whatsapp-meta');
-      } else {
-        console.log('ℹ️ Meta: Non-text message ignored');
-      }
-      return;
-    }
-
-    // CASE 2: Evolution API
-    const evoEvent = body.event || body.type;
-    console.log('ℹ️ Evolution Event Type:', evoEvent);
-    
-    if (evoEvent && (evoEvent === "messages.upsert" || evoEvent === "MESSAGES_UPSERT")) {
-      const data = Array.isArray(body.data) ? body.data[0] : body.data;
-      if (!data) {
-        console.log('ℹ️ Evolution: No data in payload');
-        return;
-      }
-
-      const message = data.message;
-      const key = data.key;
-      const instance = body.instance || body.sender || 'UnknownInstance';
-      console.log(`📱 [Instance] Using: ${instance}`);
-      const remoteJid = key?.remoteJid;
-      const participant = key?.participant; // Fallback for group messages or @lid sessions
-      
-      // 🔧 MODIFIED: Try to process @lid sessions by converting to @s.whatsapp.net
-      if (remoteJid && remoteJid.includes('@lid')) {
-        console.log(`⚠️ [WARNING] Session is in @lid mode: ${remoteJid}`);
-        console.log(`🔧 [ATTEMPT] Trying to convert @lid to @s.whatsapp.net and force send...`);
-        
-        // Extract the number and force @s.whatsapp.net format
-        const numberOnly = remoteJid.split('@')[0];
-        const forcedJid = `${numberOnly}@s.whatsapp.net`;
-        
-        console.log(`📌 Original JID: ${remoteJid}`);
-        console.log(`📌 Forced JID: ${forcedJid}`);
-        console.log(`📌 Participant (if any): ${participant || 'N/A'}`);
-        
-        // Continue processing with forced JID
-        const sender = numberOnly;
-        const senderJid = forcedJid;
-        
-        const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
-        
-        console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
-
-        if (text && sender) {
-          // --- LENGTH CHECK ---
-          if (text.length > 200) {
-            console.log(`ℹ️ [Gatekeeper] Message too long (${text.length} chars) from ${sender}`);
-            await sendMessage(instance, sender, "Your message is too long, mate. Please keep it short. 📉");
-            return;
-          }
-
-          processMessageBackground(text, senderJid, instance, 'whatsapp-evolution');
-        } else {
-          console.log('ℹ️ Evolution: No text or sender found');
-        }
-        return;
-      }
-      
-      // Try to get real number from participant if remoteJid is invalid
-      const actualJid = (remoteJid && remoteJid.includes('@s.whatsapp.net')) 
-        ? remoteJid 
-        : (participant && participant.includes('@s.whatsapp.net') ? participant : null);
-      
-      if (!actualJid) {
-        console.log(`⛔ [ERROR] No valid JID found. remoteJid: ${remoteJid}, participant: ${participant}`);
-        return;
-      }
-      
-      const senderNumber = actualJid.split('@')[0];
-      const sender = senderNumber;
-      const senderJid = actualJid;
-
-      // 🔒 Whitelist check FIRST (Silent Ignore)
-      // 🔒 Whitelist check DISABLED -- OPEN TO ALL
-      // if (!sender || !ALLOWED_NUMBERS.some(num => sender.includes(num))) {
-      //   console.log(`ℹ️ Evolution: Ignorando mensagem de número não autorizado: ${sender}`);
-      //   return;
-      // }
-
-      // --- GATEKEEPER (EVOLUTION) ---
-      const isAudio = message?.audioMessage || message?.pttMessage;
-      const isVisual = message?.imageMessage || message?.videoMessage || message?.stickerMessage;
-      const isDoc = message?.documentMessage || message?.documentWithCaptionMessage;
-      
-      if (isAudio) {
-        console.log(`ℹ️ [Gatekeeper] Audio detected from ${sender}`);
-        await sendMessage(instance, sender, "I haven't got ears yet 👂");
-        return;
-      }
-      if (isVisual || isDoc) {
-        console.log(`ℹ️ [Gatekeeper] Media/Doc detected from ${sender}`);
-        await sendMessage(instance, sender, "I can't see photos yet 📷");
-        return;
-      }
-
-      const text = message?.conversation || message?.extendedTextMessage?.text || message?.imageMessage?.caption || "";
-      
-      console.log(`ℹ️ Evolution: From=${sender}, Text=${text}`);
-
-      if (text && sender) {
-        // --- LENGTH CHECK ---
-        if (text.length > 200) {
-          console.log(`ℹ️ [Gatekeeper] Message too long (${text.length} chars) from ${sender}`);
-          await sendMessage(instance, sender, "Your message is too long, mate. Please keep it short. 📉");
-          return;
-        }
-
-        // Whitelist was already checked at the top of Case 2
-        processMessageBackground(text, senderJid, instance, 'whatsapp-evolution');
-      } else {
-        console.log('ℹ️ Evolution: No text or sender found');
-      }
-      return;
-    }
+// --- DEPRECATED WEBHOOKS REMOVED ---
 
     // Default: Check if this is a WhatsApp status update (ignore them)
     if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
@@ -1820,13 +1399,11 @@ app.use((req, res, next) => {
 
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
-  
-  // Start Baileys
-  startBaileys(handleBaileysMessage).catch(err => console.error('Error starting Baileys:', err));
 
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
   console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? `✅ Set (${process.env.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ Missing'}`);
+  console.log(`- EVOLUTION_API_URL: ${process.env.EVOLUTION_API_URL ? '✅ Set' : '❌ Missing'}`);
   
   // Migration for UK users
   runMigration();
