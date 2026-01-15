@@ -114,68 +114,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- NEW: Raw Body Middleware for Webhook ---
-// This allows us to see the original payload before Express parses it
-app.use('/webhook', express.text({ type: 'application/json' }));
-
 app.use(express.json());
 
-// --- WEBHOOK FOR EVOLUTION API v1.8 & v2 ---
-// --- WEBHOOK HANDLER (Shared) ---
-const webhookHandler = async (req, res) => {
-  console.log(`[Webhook] 🔔 Hit received on ${req.originalUrl || req.url}`);
-  
-  if (typeof req.body === 'string') {
-    try { req.body = JSON.parse(req.body); } catch(e) {}
-  }
-  
-  // Respondemos 200 OK imediatamente
-  res.sendStatus(200);
-
-  try {
-    const body = req.body;
-    // Log detalhado APENAS se for uma mensagem (para não poluir com presença/status)
-    const event = body.event || body.type;
-    console.log(`[Webhook] Event: ${event}`);
-
-    if (event === "messages.upsert" || event === "MESSAGES_UPSERT") {
-      const data = Array.isArray(body.data) ? body.data[0] : body.data;
-      if (!data || data.key?.fromMe) return;
-
-      console.log('[DEBUG KEY]', JSON.stringify(data.key, null, 2));
-
-      // Tenta usar o remoteJid. Se for LID, precisamos investigar se há outro campo
-      let remoteJid = data.key.remoteJid;
-      
-      // Se for @lid, tentamos achar o user real se possível (ou logamos aviso)
-      if (remoteJid.includes('@lid')) {
-          console.warn(`⚠️ Recebido JID do tipo LID: ${remoteJid}. Tentando responder mesmo assim...`);
-          // Em alguns casos, o participant tem o número real em grupos, mas no 1x1 é mais chato.
-      }
-
-      const text = data.message?.conversation || 
-                   data.message?.extendedTextMessage?.text || 
-                   data.message?.imageMessage?.caption || "";
-
-      const instance = body.instance || process.env.EVOLUTION_INSTANCE || 'hh';
-
-      if (text) {
-          console.log(`[Evolution Webhook] 📥 Mensagem de ${remoteJid}: ${text}`);
-          processMessageBackground(text, remoteJid, instance, 'whatsapp-evolution');
-      }
-    } else {
-        console.log(`[Webhook] Ignorando evento irrelevante: ${event}`);
-    }
-  } catch (error) {
-    console.error('[Evolution Webhook] ❌ Erro ao processar payload:', error.message);
-  }
-};
-
-// Rota Principal
-app.post('/webhook/whatsapp', webhookHandler);
-
-// Rota com Sufixo (ex: /webhook/whatsapp/messages-upsert)
-app.post('/webhook/whatsapp/:suffix', webhookHandler);
+// Evolution Webhook Removed (Legacy)
 
 // Facebook Webhook Verification (Caso ainda usem Meta API futuramente)
 app.get('/webhook', (req, res) => {
@@ -663,7 +604,7 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
         const sessionRef = db.collection('wa_sessions').doc(sender);
         const sessionSnap = await sessionRef.get();
 
-        if (!sessionSnap.exists()) {
+        if (!sessionSnap.exists) {
             // No session found for this LID. Check verification progress.
             const linkRef = db.collection('wa_links').doc(sender);
             const linkSnap = await linkRef.get();
@@ -689,7 +630,7 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                 const targetUserRef = db.collection('usuarios').doc(targetPhone);
                 const targetUserSnap = await targetUserRef.get();
                 
-                if (!targetUserSnap.exists() || targetUserSnap.data().status !== 'active') {
+                if (!targetUserSnap.exists || targetUserSnap.data().status !== 'active') {
                     await sendMessage(instance, sender, `❌ *Subscription not found.* Please ensure you are using the number used during checkout.`, socket);
                     return;
                 }
@@ -715,8 +656,8 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                 const codeMsg = `🔐 Your Penny verification code is: *${code}*\n\nDo not share this code.`;
                 await sendMessage(instance, targetPhone, codeMsg, socket);
 
-                // Notify LID
-                const lidMsg = `✅ *Subscription found!*\n\nWe've sent a 6-digit code to the WhatsApp account of this number (${phone}).\nEnter the code here to unlock access.`;
+                // Notify LID (The anonymous user)
+                const lidMsg = `✅ *Subscription found!*\n\n🔐 Your Penny verification code is: *${code}*\n\n*Please enter the 6-digit code here to unlock your access.*`;
                 await sendMessage(instance, sender, lidMsg, socket);
                 return;
             }
@@ -730,11 +671,15 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                     });
                     await linkRef.delete();
                     
+                    // Force UK Mode for this user setup
+                    const userRefInitial = db.collection('usuarios').doc(linkData.targetPhone);
+                    await userRefInitial.set({ features: { ukMode: true } }, { merge: true });
+                    
                     // Proceeding to Onboarding (Hi)
                     effectiveUserId = linkData.targetPhone;
-                    isBrazil = effectiveUserId.startsWith('55');
+                    isBrazil = false; // Force English
                     
-                    console.log(`✅ [Security] LID ${sender} linked to ${effectiveUserId}`);
+                    console.log(`✅ [Security] LID ${sender} linked to ${effectiveUserId} (Forced UK Mode)`);
 
                     // Force 'Hi' to trigger the AI onboarding message
                     text = 'Hi';
@@ -1032,12 +977,8 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
         return transactionData.response_message; // Return AI response
     })();
 
-    // Executa e espera resposta
-    const aiResponse = await Promise.race([executionPromise, timeoutPromise]);
-    if (aiResponse) { // Garante que não envia vazio se algo retornar null
-       await smartSendMessage(instance, sender, aiResponse, socket);
-       replied = true;
-    }
+    // Wait for execution or timeout
+    await Promise.race([executionPromise, timeoutPromise]);
 
   } catch (error) {
     if (replied) return; // Se já respondeu (ex: comando), ignora erro
@@ -1101,11 +1042,13 @@ async function calculateUserTotals(userRef, isBrazil, userData = {}) {
       const createdMonthStr = createdTodayStr.substring(0, 7);
 
       if (createdTodayStr === todayStr) {
-        totalDia += amt;
         const cat = data.category || 'Other';
-        todayCategoryTotals[cat] = (todayCategoryTotals[cat] || 0) + amt;
+        if (cat !== 'Adjustment') { // Don't count balance corrections as daily spend
+            totalDia += amt;
+            todayCategoryTotals[cat] = (todayCategoryTotals[cat] || 0) + amt;
+        }
       }
-      if (createdMonthStr === monthStr) totalMes += amt;
+      if (createdMonthStr === monthStr && data.category !== 'Adjustment') totalMes += amt;
     }
   });
 
