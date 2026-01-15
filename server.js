@@ -87,6 +87,7 @@ function broadcastQuizCount() {
 // Update this list with authorized phone numbers (only digits)
 const ALLOWED_NUMBERS = [
   '557391082831', // User Primary Number
+  '447446196108', // New Authorized Number
 ];
 
 app.use(cors({
