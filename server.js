@@ -1818,23 +1818,14 @@ app.use((req, res, next) => {
 });
 
 server.listen(PORT, '0.0.0.0', async () => {
-  console.log(`Server running on port ${PORT}`);
-  
-  console.log('DEBUG: Reached server.listen callback. Starting Baileys...');
-  // Start Baileys
-  startBaileys(handleBaileysMessage).catch(err => console.error('CRITICAL: Failed to start Baileys:', err));
-  console.log('DEBUG: Baileys start command issued');
-
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
+  
+  // Start Baileys
+  startBaileys(handleBaileysMessage).catch(err => console.error('Error starting Baileys:', err));
+
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
   console.log(`- OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? `✅ Set (${process.env.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ Missing'}`);
-  
-  
-  // WhatsApp integration disabled
-  console.log('📱 WhatsApp: Desabilitado');
-  
-  
   
   // Migration for UK users
   runMigration();
