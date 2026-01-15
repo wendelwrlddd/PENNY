@@ -20,14 +20,24 @@ import { Server } from 'socket.io';
 
 
 // WhatsApp routes (Evolution API)
-// WhatsApp routes (Evolution API)
+// WhatsApp routes
 import whatsappRoutes from './routes/whatsapp.js';
-import { sendMessage as sendMsgLib, sendPresence as sendPresLib } from './lib/evolutionClient.js';
+import { startBaileys, sendMessage as sendBaileysMsg, sendPresence as sendBaileysPres } from './lib/baileys.js';
 
-// Wrappers for compatibility with existing logic
-// Ignores 'instance' param as we use ENV in client
-const sendMessage = async (instance, number, text) => sendMsgLib(number, text);
-const sendPresence = async (instance, number, status) => sendPresLib(number, status);
+// Wrappers for compatibility
+const sendMessage = async (instance, number, text) => sendBaileysMsg(number, text);
+const sendPresence = async (instance, number, status) => sendBaileysPres(number, status);
+
+// Baileys Handler Adptator
+async function handleBaileysMessage(msg) {
+  const sender = msg.key.remoteJid;
+  const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
+  
+  if (!text) return;
+
+  console.log(`[Baileys] Msg from ${sender}: ${text}`);
+  await processMessageBackground(text, sender, 'baileys', 'whatsapp-baileys');
+}
 
 
 import { createRequire } from 'module';
@@ -94,36 +104,7 @@ app.use(express.json());
 // WhatsApp API routes
 app.use('/api/whatsapp', whatsappRoutes);
 
-// --- WHATSAPP WEBHOOK (Evolution API) ---
-app.post('/api/whatsapp/webhook', async (req, res) => {
-  try {
-    const event = req.body;
-    
-    // v1.8 Event Structure: { event: 'messages.upsert', data: { ... } }
-    if (event.event === 'messages.upsert') {
-      const msgData = event.data;
-      const sender = msgData.key.remoteJid;
-      const fromMe = msgData.key.fromMe;
-      
-      if (fromMe) return res.status(200).send('Ignored fromMe');
-      
-      const msgContent = msgData.message;
-      if (!msgContent) return res.status(200).send('No content');
-      
-      const text = msgContent.conversation || msgContent.extendedTextMessage?.text || '';
-      
-      if (!text) return res.status(200).send('No text');
-
-      // Call existing background processor
-      await processMessageBackground(text, sender, process.env.EVOLUTION_INSTANCE, 'whatsapp-evolution');
-    }
-
-    res.status(200).send('Webhook processed');
-  } catch (error) {
-    console.error('Webhook Error:', error.message);
-    res.status(500).send('Error');
-  }
-});
+// --- Baileys Webhook removed (Running in-process) ---
 
 
 // --- SERVE REACT STATIC FILES ---
@@ -1836,7 +1817,12 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
 });
 
-server.listen(PORT, '0.0.0.0', async () => { // Changed to async
+server.listen(PORT, '0.0.0.0', async () => {
+  console.log(`Server running on port ${PORT}`);
+  
+  // Start Baileys
+  startBaileys(handleBaileysMessage).catch(err => console.error('Failed to start Baileys:', err));
+
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
   console.log(`Environment:`);
   console.log(`- FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing'}`);
