@@ -1820,8 +1820,10 @@ app.use((req, res, next) => {
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
   
+  console.log('DEBUG: Reached server.listen callback. Starting Baileys...');
   // Start Baileys
-  startBaileys(handleBaileysMessage).catch(err => console.error('Failed to start Baileys:', err));
+  startBaileys(handleBaileysMessage).catch(err => console.error('CRITICAL: Failed to start Baileys:', err));
+  console.log('DEBUG: Baileys start command issued');
 
   console.log(`🚀 Penny Finance Server running on port ${PORT}`);
   console.log(`Environment:`);
