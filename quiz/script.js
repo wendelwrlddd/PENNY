@@ -22,6 +22,16 @@ const questions = [
         id: 1,
         icon: "help-circle",
         category: "B",
+        question: "I'm going to point out the real problem with never having any money left over. With a simple question, you'll see for yourself why you need our AI. Do you remember how many pounds you spent last week?",
+        options: [
+            { text: "Wow! I have no idea!", cat: "B" },
+            { text: "I remember! But not everything for sure.", cat: "C" }
+        ]
+    },
+    {
+        id: 2,
+        icon: "help-circle",
+        category: "B",
         question: "Let's be honest: Where do you feel you lost control this week?",
         options: [
             { text: "In NQ/Spinningfields (Pints and fancy dinners).", cat: "A" },
@@ -31,7 +41,7 @@ const questions = [
         ]
     },
     {
-        id: 2,
+        id: 3,
         icon: "message-square",
         category: "C",
         question: "Why don't you track every penny?",
@@ -43,7 +53,7 @@ const questions = [
         ]
     },
     {
-        id: 3,
+        id: 4,
         icon: "banknote",
         category: "D",
         question: "What's the main excuse you tell yourself?",
@@ -52,18 +62,6 @@ const questions = [
             { text: "Uber buys me time, and time is money.", cat: "C" },
             { text: "It’s an investment in my mental health.", cat: "B" },
             { text: "I'll get this round, you get the next.", cat: "A" }
-        ]
-    },
-    {
-        id: 4,
-        icon: "clock",
-        category: "D",
-        question: "If you had to log expenses manually, how long would you last?",
-        options: [
-            { text: "Wouldn't even start.", cat: "D" },
-            { text: "Maybe 2 days max.", cat: "B" },
-            { text: "A week, if I'm feeling ambitious.", cat: "C" },
-            { text: "I could, but it’s a massive faff.", cat: "A" }
         ]
     },
     {
@@ -80,14 +78,12 @@ const questions = [
     },
     {
         id: 6,
-        icon: "activity",
+        icon: "smartphone",
         category: "A",
-        question: "Where will you be in 6 months without fixing this?",
+        image: "penny-demo.jpg",
+        question: "You're already used to using Penny, as it works with a simple message.",
         options: [
-            { text: "Deep in my overdraft and stressed.", cat: "A" },
-            { text: "Same as now: surviving, but skint.", cat: "B" },
-            { text: "Saying goodbye to my holidays.", cat: "C" },
-            { text: "Don't even make me think about it.", cat: "D" }
+            { text: "See how much our customers saved!", cat: "A" }
         ]
     },
     {
@@ -206,6 +202,16 @@ function showQuestion() {
         chartArea.style.display = 'none';
     }
 
+    // Handle image visibility
+    const imageArea = document.getElementById('image-area');
+    const questionImage = document.getElementById('question-image');
+    if (q.image) {
+        questionImage.src = q.image;
+        imageArea.style.display = 'block';
+    } else {
+        imageArea.style.display = 'none';
+    }
+
     // Render options
     optionsContainer.innerHTML = '';
     const btns = q.options.map((opt, i) => {
@@ -224,8 +230,8 @@ function showQuestion() {
 function next(cat, answerText) {
     if (scores[cat] !== undefined) scores[cat]++;
     
-    // Capture first answer for personalization
-    if (currentIdx === 0 && answerText) {
+    // Capture personality answer (now question 2)
+    if (currentIdx === 1 && answerText) {
         firstQuestionAnswer = answerText;
     }
     
