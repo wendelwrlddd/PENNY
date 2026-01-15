@@ -20,7 +20,14 @@ import { Server } from 'socket.io';
 
 
 // WhatsApp routes (Evolution API)
+// WhatsApp routes (Evolution API)
 import whatsappRoutes from './routes/whatsapp.js';
+import { sendMessage as sendMsgLib, sendPresence as sendPresLib } from './lib/evolutionClient.js';
+
+// Wrappers for compatibility with existing logic
+// Ignores 'instance' param as we use ENV in client
+const sendMessage = async (instance, number, text) => sendMsgLib(number, text);
+const sendPresence = async (instance, number, status) => sendPresLib(number, status);
 
 
 import { createRequire } from 'module';
@@ -84,7 +91,39 @@ app.use('/webhook', express.text({ type: 'application/json' }));
 app.use(express.json());
 
 // WhatsApp API routes
+// WhatsApp API routes
 app.use('/api/whatsapp', whatsappRoutes);
+
+// --- WHATSAPP WEBHOOK (Evolution API) ---
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  try {
+    const event = req.body;
+    
+    // v1.8 Event Structure: { event: 'messages.upsert', data: { ... } }
+    if (event.event === 'messages.upsert') {
+      const msgData = event.data;
+      const sender = msgData.key.remoteJid;
+      const fromMe = msgData.key.fromMe;
+      
+      if (fromMe) return res.status(200).send('Ignored fromMe');
+      
+      const msgContent = msgData.message;
+      if (!msgContent) return res.status(200).send('No content');
+      
+      const text = msgContent.conversation || msgContent.extendedTextMessage?.text || '';
+      
+      if (!text) return res.status(200).send('No text');
+
+      // Call existing background processor
+      await processMessageBackground(text, sender, process.env.EVOLUTION_INSTANCE, 'whatsapp-evolution');
+    }
+
+    res.status(200).send('Webhook processed');
+  } catch (error) {
+    console.error('Webhook Error:', error.message);
+    res.status(500).send('Error');
+  }
+});
 
 
 // --- SERVE REACT STATIC FILES ---
