@@ -490,6 +490,65 @@ app.post('/api/pay/generate-link', async (req, res) => {
 });
 
 /**
+ * 🎁 FREE TRIAL REGISTRATION
+ * Rota: POST /api/trial/register
+ */
+app.post('/api/trial/register', async (req, res) => {
+    const { phoneNumber, email } = req.body;
+
+    if (!phoneNumber) {
+        return res.status(400).json({ error: 'Phone number is required.' });
+    }
+
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+    // Basic Validation
+    if (cleanPhone.length < 10) {
+        return res.status(400).json({ error: 'Invalid phone number.' });
+    }
+
+    try {
+        const userRef = db.collection('usuarios').doc(cleanPhone);
+        const userSnap = await userRef.get();
+
+        if (userSnap.exists) {
+            const userData = userSnap.data();
+            // Allow re-register only if not active/premium to prevent abuse? 
+            // For now, let's say: if already exists, return what it is.
+            if (userData.plan === 'active' || userData.plan === 'premium') {
+                return res.json({ success: true, message: 'User already active', alreadyExists: true });
+            }
+             // If expired trial, deny? Or allow? Policy says "2 days only".
+             if (userData.trialEndDate && new Date() > new Date(userData.trialEndDate)) {
+                 return res.json({ success: false, error: 'Trial expired' });
+             }
+        }
+
+        // Create Trial User
+        const now = new Date();
+        const endDate = new Date(now.getTime() + (48 * 60 * 60 * 1000)); // +48 hours
+
+        await userRef.set({
+            phone: cleanPhone,
+            email: email || '',
+            plan: 'trial',
+            status: 'active',
+            trialStartDate: now.toISOString(),
+            trialEndDate: endDate.toISOString(),
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString()
+        }, { merge: true });
+
+        console.log(`🎁 [TRIAL] User ${cleanPhone} registered for 2 days trial.`);
+        return res.json({ success: true, redirect: `https://wa.me/${process.env.BOT_NUMBER || '557388177328'}?text=Oi` });
+
+    } catch (error) {
+        console.error('❌ Trial Register Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+/**
  * Rota /api/me (Validação)
  */
 app.get('/api/me', authMiddleware, async (req, res) => {
@@ -599,6 +658,37 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
     
     console.log(`[Security] 🔓 Access granted to: ${sender} (Open Mode)`);
 
+    // --- TRIAL CHECK ---
+    const userRefCheck = db.collection('usuarios').doc(effectiveUserId);
+    const userSnapCheck = await userRefCheck.get();
+    const userData = userSnapCheck.data() || {};
+
+    if (userData.plan === 'trial') {
+        const now = new Date();
+        const trialEnd = userData.trialEndDate ? new Date(userData.trialEndDate) : null;
+        
+        if (trialEnd && now > trialEnd) {
+             console.log(`⏳ [TRIAL EXPIRED] User ${effectiveUserId} trial ended.`);
+             
+             // Expire message
+             const expiredMsg = isBrazil 
+                ? "⏳ *Seu período de teste acabou!*\n\nMas temos uma boa notícia! Você foi selecionado para nosso Plano Anual com **80% de desconto**.\nIsso dá apenas 3 centavos por dia. 🚀\n\nClique abaixo para garantir:"
+                : "⏳ *Your 2-day free trial has ended.*\n\nBut good news! You've been selected for an exclusive Annual Plan with **80% OFF**.\nThat's just **3 pence a day** to keep using Penny! 🚀\n\nClick here to claim this offer:";
+             
+             // Send upsell message
+             await sendMessage(instance, sender, expiredMsg, socket);
+             
+             // Send link
+             // const link = await generateSubscriptionLink(effectiveUserId); 
+             // Using direct checkout link as requested for "checkout" experience
+             const link = `https://penny-finance.vercel.app/checkout?phone=${effectiveUserId}`;
+             await sendMessage(instance, sender, `👉 ${link}`, socket);
+
+             return; // STOP PROCESSING
+        }
+    }
+    // -------------------
+
     // --- SECURITY VERIFICATION FLOW (LID -> Phone) ---
     if (sender.includes('@lid')) {
         const sessionRef = db.collection('wa_sessions').doc(sender);
@@ -631,14 +721,16 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                 const targetUserSnap = await targetUserRef.get();
                 
                 if (!targetUserSnap.exists || targetUserSnap.data().status !== 'active') {
-                    await sendMessage(instance, sender, `❌ *Subscription not found.* Please ensure you are using the number used during checkout.`, socket);
+                    await sendMessage(instance, sender, `❌ *Account not found.* Please ensure you are using the number registered for Trial or Premium.`, socket);
                     return;
                 }
+                
+                const targetData = targetUserSnap.data();
 
                 // --- NEW: Uniqueness Check ---
                 const linkedSnap = await db.collection('wa_sessions').where('phone', '==', targetPhone).get();
                 if (!linkedSnap.empty) {
-                    await sendMessage(instance, sender, `❌ *Subscription already in use.*\n\nThis subscription is already linked to another WhatsApp account. Each subscription supports only one device.`, socket);
+                    await sendMessage(instance, sender, `❌ *Account already in use.*\n\nThis account is already linked to another WhatsApp session.`, socket);
                     return;
                 }
                 // -----------------------------
@@ -657,7 +749,12 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                 await sendMessage(instance, targetPhone, codeMsg, socket);
 
                 // Notify LID (The anonymous user)
-                const lidMsg = `✅ *Subscription found!*\n\n🔐 Your Penny verification code is: *${code}*\n\n*Please enter the 6-digit code here to unlock your access.*`;
+                let successTitle = "✅ *Subscription found!*";
+                if (targetData.plan === 'trial') {
+                    successTitle = "✅ *Free Trial Active!*";
+                }
+                
+                const lidMsg = `${successTitle}\n\n🔐 Your Penny verification code is: *${code}*\n\n*Please enter the 6-digit code here to unlock your access.*`;
                 await sendMessage(instance, sender, lidMsg, socket);
                 return;
             }

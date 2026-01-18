@@ -145,11 +145,19 @@ const translations = {
 
 import Checkout from './components/Checkout';
 import ThankYou from './components/ThankYou';
+import TrialChatInterface from './components/TrialChatInterface';
 
 function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <Routes>
+        <Route path="/" element={<AppContent />} />
+        <Route path="/checkout" element={<Checkout />} />
+        <Route path="/thank-you" element={<ThankYou />} />
+        <Route path="/trial" element={<TrialChatInterface />} />
+        {/* Fallback for anything else to Home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   );
 }
