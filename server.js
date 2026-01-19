@@ -10,7 +10,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import authMiddleware from './authMiddleware.js';
 import { startBaileys, sendBaileysMessage } from './lib/baileys.js';
-import { extractFinancialData } from './lib/openai.js';
+import { extractFinancialData, generatePennyInsight } from './lib/openai.js';
 import { formatCurrency, getCurrencySymbol } from './lib/currency.js'; // Helper de moeda
 
 
@@ -910,6 +910,20 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
             replied = true;
             return;
         }
+
+        if (upperText === '#STOPREPORT') {
+            await userRef.update({ dailyReportEnabled: false });
+            await sendMessage(instance, sender, isBrazil ? "✅ Relatório diário desativado. Para reativar, envie #STARTREPORT" : "✅ Daily report disabled. To reactivate, send #STARTREPORT", socket);
+            replied = true;
+            return;
+        }
+
+        if (upperText === '#STARTREPORT') {
+            await userRef.update({ dailyReportEnabled: true });
+            await sendMessage(instance, sender, isBrazil ? "✅ Relatório diário ativado!" : "✅ Daily report activated!", socket);
+            replied = true;
+            return;
+        }
         
         // --- DATA CALC ---
         const totals = await calculateUserTotals(userRef, isBrazil, userData);
@@ -1241,9 +1255,10 @@ app.post('/webhook', async (req, res) => {
 
 // --- Proactive AI Messaging Loop ---
 async function checkProactiveMessages() {
-  console.log('🕒 [Proactive] Running 15min check (Reminders + Nudges)...');
+  console.log('🕒 [Proactive] Running 15min check (Reminders + Nudges + Reports)...');
   try {
     const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
     
     // Find users active in last 48h to avoid spamming very old users
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60000).toISOString();
@@ -1258,8 +1273,60 @@ async function checkProactiveMessages() {
       const instance = userData.instance || 'penny-instance';
 
       if (!userData.onboarding_complete) continue;
+
+      // --- 1. DAILY INSIGHT REPORT (21:30) ---
+      const tz = isBrazil ? 'America/Sao_Paulo' : 'Europe/London';
+      const userTime = now.toLocaleTimeString('pt-BR', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+      const userDateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+      const reportEnabled = userData.dailyReportEnabled !== false;
+
+      if (reportEnabled && userTime === "21:30" && userData.lastDailyReportSentAt !== userDateStr) {
+        console.log(`📊 [Report] Generating 21:30 insights for ${userId}...`);
+        
+        const totals = await calculateUserTotals(doc.ref, isBrazil, userData);
+        const { todayCategoryTotals, totalDia, currentBalance } = totals;
+
+        // Skip fixed categories for insight
+        const fixedCats = ['Bills', 'Rent', 'Investment', 'Adjustment', 'Contas', 'Aluguel', 'Investimento', 'Ajuste', 'Onboarding'];
+        let topCat = '';
+        let topAmount = 0;
+        
+        const sortedCats = Object.entries(todayCategoryTotals)
+          .sort(([, a], [, b]) => b - a);
+
+        for (const [cat, amt] of sortedCats) {
+          if (!fixedCats.includes(cat)) {
+            topCat = cat;
+            topAmount = amt;
+            break;
+          }
+        }
+
+        let reportMsg = isBrazil ? `📊 *Resumo de Hoje*\n` : `📊 *Today's Summary*\n`;
+        if (totalDia > 0) {
+          // Top 3 listing
+          sortedCats.slice(0, 3).forEach(([cat, amt]) => {
+            reportMsg += `• ${cat}: ${isBrazil ? 'R$' : '£'}${amt.toFixed(2)}\n`;
+          });
+
+          // AI Insight
+          const insight = await generatePennyInsight(topCat || 'Spending', topAmount || totalDia, isBrazil);
+          reportMsg += `\n💡 *Penny diz:*\n"${insight}"\n`;
+        } else {
+          reportMsg += isBrazil 
+            ? "\n🌟 Zero gastos hoje! Penny está orgulhosa de sua disciplina financeira, darling."
+            : "\n🌟 Zero expenses today! Penny is proud of your financial discipline, darling.";
+        }
+
+        reportMsg += `\n🔗 [Dashboard](https://penny-finance.vercel.app/?token=${await generateUserToken(userId)})\n`;
+        reportMsg += `\n_(#STOPREPORT p/ cancelar)_`;
+
+        await sendMessage(instance, userId, reportMsg);
+        await doc.ref.update({ lastDailyReportSentAt: userDateStr });
+        continue;
+      }
       
-      // 1. Check for 6-hour inactivity reminder
+      // --- 2. 6-HOUR INACTIVITY REMINDER ---
       const lastExpenseAt = userData.lastExpenseAt ? new Date(userData.lastExpenseAt) : null;
       const reminder6hSent = userData.reminder6hSent || false;
       const hourDiff = lastExpenseAt ? (now.getTime() - lastExpenseAt.getTime()) / (1000 * 60 * 60) : 0;
