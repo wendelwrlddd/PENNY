@@ -1013,6 +1013,13 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
                 intent: 'ADD_EXPENSE'
               });
             }
+
+            // --- REMINDER RESET ---
+            await userRef.update({
+              lastExpenseAt: new Date().toISOString(),
+              reminder6hSent: false
+            });
+            console.log(`⏰ [Reminder] Reset for user ${effectiveUserId}`);
         }
         
         // ... (other intents like REMOVE_EXPENSE, CORRECTION etc could be re-added if needed, but keeping core for now)
@@ -1234,41 +1241,73 @@ app.post('/webhook', async (req, res) => {
 
 // --- Proactive AI Messaging Loop ---
 async function checkProactiveMessages() {
-  console.log('🕒 [Proactive] Running 30min check...');
+  console.log('🕒 [Proactive] Running 15min check (Reminders + Nudges)...');
   try {
     const now = new Date();
-    const thirtyMinsAgo = new Date(now.getTime() - 30 * 60000);
     
-    // Find users active in last 24h to avoid spamming old users
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60000).toISOString();
+    // Find users active in last 48h to avoid spamming very old users
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60000).toISOString();
     const usersSnapshot = await db.collection('usuarios')
-      .where('lastInteraction', '>', twentyFourHoursAgo)
+      .where('lastInteraction', '>', fortyEightHoursAgo)
       .get();
 
     for (const doc of usersSnapshot.docs) {
       const userData = doc.data();
       const userId = doc.id;
-      const lastPrompt = userData.lastProactivePrompt ? new Date(userData.lastProactivePrompt) : new Date(0);
+      const isBrazil = userId.startsWith('55');
+      const instance = userData.instance || 'penny-instance';
 
-      // Only prompt if last prompt was > 30 mins ago AND onboarding is complete
-      if (userData.onboarding_complete && lastPrompt < thirtyMinsAgo) {
-        const isBrazil = userId.startsWith('55');
-        const instance = userData.instance || 'penny-instance';
+      if (!userData.onboarding_complete) continue;
+      
+      // 1. Check for 6-hour inactivity reminder
+      const lastExpenseAt = userData.lastExpenseAt ? new Date(userData.lastExpenseAt) : null;
+      const reminder6hSent = userData.reminder6hSent || false;
+      const hourDiff = lastExpenseAt ? (now.getTime() - lastExpenseAt.getTime()) / (1000 * 60 * 60) : 0;
+
+      // Plan check: Premium or Active Trial
+      const hasActivePlan = userData.plan === 'premium' || (userData.plan === 'trial' && new Date(userData.trialEndDate) > now);
+
+      if (hasActivePlan && lastExpenseAt && hourDiff >= 6 && !reminder6hSent) {
+        console.log(`⏰ [Reminder] 6h Inactivity detected for ${userId}. Sending reminder...`);
         
-        // Revised proactive logic: only nudges for expenses if they haven't sent any in 24h
-        const monthStr = new Date().toISOString().substring(0, 7);
+        const brMsgs = [
+          "Que tal anotarmos os gastos das últimas 6 horas? 💰🙂",
+          "Já se passaram 6 horas desde o último registro. Quer anotar algum gasto? 💸",
+          "Lembrete rápido: registrou algum gasto nas últimas horas? 👀",
+          "Se quiser, posso te ajudar a anotar os gastos recentes 🙂"
+        ];
+        const ukMsgs = [
+          "How about we log your expenses from the last 6 hours? 💰🙂",
+          "It's been 6 hours since your last entry. Anything to record? 💸",
+          "Quick nudge: did you have any expenses in the last few hours? 👀",
+          "If you'd like, I can help you log your recent spending 🙂"
+        ];
+
+        const msgs = isBrazil ? brMsgs : ukMsgs;
+        const randomMsg = msgs[Math.floor(Math.random() * msgs.length)];
+
+        await sendMessage(instance, userId, randomMsg);
+        await doc.ref.update({ reminder6hSent: true });
+        continue; // Nudge is enough for this cycle
+      }
+
+      // 2. Existing Proactive Nudge (if no tx in 24h)
+      const lastPrompt = userData.lastProactivePrompt ? new Date(userData.lastProactivePrompt) : new Date(0);
+      const thirtyMinsAgo = new Date(now.getTime() - 30 * 60000);
+
+      if (lastPrompt < thirtyMinsAgo) {
         const dayTxs = await doc.ref.collection('transactions')
           .where('createdAt', '>=', new Date(now.getTime() - 24 * 60 * 60000).toISOString())
           .limit(1)
           .get();
 
         if (dayTxs.empty) {
-          const message = isBrazil
+          const nudgeMsg = isBrazil
             ? "Oi! Passando para ver se você teve algum gasto hoje que esqueceu de anotar. 📝"
             : "Hi! Just checking if you had any expenses today that you forgot to track. 📝";
           
-          console.log(`🕒 [Proactive] Sending nudge to ${userId}`);
-          await sendMessage(instance, userId, message);
+          console.log(`🕒 [Proactive] Sending 24h nudge to ${userId}`);
+          await sendMessage(instance, userId, nudgeMsg);
           await doc.ref.update({ lastProactivePrompt: now.toISOString() });
         }
       }
@@ -1278,8 +1317,8 @@ async function checkProactiveMessages() {
   }
 }
 
-// Start the loop every 30 minutes
-setInterval(checkProactiveMessages, 30 * 60000);
+// Start the loop every 15 minutes for better granularity
+setInterval(checkProactiveMessages, 15 * 60000);
 
 // --- Scheduled Daily Night Report (00:00) ---
 cron.schedule('0 0 * * *', async () => {
