@@ -10,7 +10,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import authMiddleware from './authMiddleware.js';
 import { startBaileys, sendBaileysMessage } from './lib/baileys.js';
-import { extractFinancialData, generatePennyInsight } from './lib/openai.js';
+import { extractFinancialData, generatePennyInsight, generateSavingsAdvice } from './lib/openai.js';
 import { formatCurrency, getCurrencySymbol } from './lib/currency.js'; // Helper de moeda
 
 
@@ -627,6 +627,34 @@ async function smartSendMessage(instance, phone, text, socket = null) {
     return sendMessage(instance, phone, text, socket);
 }
 
+// --- SAVINGS ADVICE HELPERS ---
+const SAVINGS_KEYWORDS = [
+  'how do i save', 'how can i save', 'save money', 'spend less', 'cut costs', 
+  'reduce spending', 'reduce expenses', 'any tips', 'ways to save', 'money saving'
+];
+
+const SAVINGS_INTERROGATIVES = ['?', 'how', 'what', 'ways', 'tips', 'guide'];
+
+const SAVINGS_CATEGORIES = {
+  transport: ['uber', 'transport', 'bus', 'train', 'taxi', 'rides', 'tube', 'fuel'],
+  food: ['food', 'groceries', 'takeaway', 'delivery', 'restaurant', 'supermarket', 'tesco', 'lidl'],
+  leisure: ['leisure', 'entertainment', 'cinema', 'gym', 'subscription', 'netflix', 'spotify'],
+  shopping: ['shopping', 'clothes', 'amazon', 'online', 'asda'],
+  general: []
+};
+
+function normalizeText(text) {
+  return text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
+}
+
+function getSavingsCategory(text) {
+  const t = text.toLowerCase();
+  for (const [category, keywords] of Object.entries(SAVINGS_CATEGORIES)) {
+    if (keywords.some(k => t.includes(k))) return category;
+  }
+  return 'general';
+}
+
 // Helper function to process message in background
 async function processMessageBackground(text, sender, instance, source, dbUserId = null, socket = null) {
   let replied = false; 
@@ -805,7 +833,57 @@ async function processMessageBackground(text, sender, instance, source, dbUserId
         
         if (userData.features?.ukMode === true) isBrazil = false;
 
-        // --- COMMANDS ---
+        // --- 1. SAVINGS ADVICE CHECK ---
+        const normText = normalizeText(text);
+        const isSavingsIntent = SAVINGS_KEYWORDS.some(k => normText.includes(k)) && 
+                                SAVINGS_INTERROGATIVES.some(i => text.toLowerCase().includes(i));
+        
+        if (isSavingsIntent) {
+            console.log(`💡 [Savings] Intent detected for ${effectiveUserId}: ${text}`);
+            
+            // Rate Limit: 1 every 10 mins
+            const lastAdviceAt = userData.lastSavingsAdviceAt ? new Date(userData.lastSavingsAdviceAt) : new Date(0);
+            const sinceLastAdvice = (new Date().getTime() - lastAdviceAt.getTime()) / (1000 * 60);
+
+            if (sinceLastAdvice < 10) {
+                 const waitMsg = isBrazil 
+                    ? "Devagar, darling! Já te dei uma dica recentemente. Tente novamente em alguns minutos."
+                    : "Steady on, darling! I've shared some tips recently. Give it a few more minutes.";
+                 await smartSendMessage(instance, sender, waitMsg, socket);
+                 replied = true;
+                 return;
+            }
+
+            const category = getSavingsCategory(text);
+            let advice = await generateSavingsAdvice(category, isBrazil);
+            
+            // Fallback
+            if (!advice) {
+                advice = isBrazil 
+                    ? "A melhor forma de economizar é acompanhar de perto. Verifique seu dashboard para encontrar pequenos hábitos que você pode ajustar hoje."
+                    : "The best saving starts with tracking. Review your dashboard to find small habits you can adjust today.";
+            }
+
+            const mandatoryFooter = isBrazil
+                ? "\n\nContinue registrando seus gastos para sabermos para onde seu dinheiro está indo embora."
+                : "\n\nContinue registering your expenses so we can understand where your money is going.";
+
+            const finalMsg = `💡 *Smart ways to save:*\n\n${advice}${mandatoryFooter}`;
+            await smartSendMessage(instance, sender, finalMsg, socket);
+            
+            await userRef.update({ lastSavingsAdviceAt: new Date().toISOString() });
+            
+            // If the message ONLY contained the savings question, stop here.
+            // If it also looks like a transaction (e.g. "I spent £10 on Uber, how do I save money?"), continue.
+            const looksLikeTransaction = text.match(/\d+/) && (text.toLowerCase().includes('spent') || text.toLowerCase().includes('gastei'));
+            if (!looksLikeTransaction) {
+                replied = true;
+                return;
+            }
+            console.log("📝 [Savings] Message also contains transaction data. Continuing processing...");
+        }
+
+        // --- 2. COMMANDS ---
         const upperText = text.toUpperCase();
         if (upperText === '#DESARMAR') {
           console.log(`🚨 [PANIC] Disarm command received from ${sender}. Logging out instance ${instance}...`);
