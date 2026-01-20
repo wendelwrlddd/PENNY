@@ -1358,7 +1358,7 @@ async function checkProactiveMessages() {
       const userDateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
       const reportEnabled = userData.dailyReportEnabled !== false;
 
-      if (reportEnabled && userTime === "21:30" && userData.lastDailyReportSentAt !== userDateStr) {
+      if (reportEnabled && userTime >= "21:30" && userData.lastDailyReportSentAt !== userDateStr) {
         console.log(`📊 [Report] Generating 21:30 insights for ${userId}...`);
         
         const totals = await calculateUserTotals(doc.ref, isBrazil, userData);
